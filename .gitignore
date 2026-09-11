@@ -50,3 +50,4 @@ IMPLEMENTATION_START_HERE.md
 .node_modules-incomplete/
 apps/web/.output/
 apps/web/.vercel/
+.vercel/
