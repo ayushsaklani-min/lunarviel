@@ -16,7 +16,7 @@ services:
     name: lunarveil-api-preview
     runtime: node
     plan: free
-    buildCommand: npm ci && npm --workspace @lunarveil/api-server run typecheck
+    buildCommand: npm ci && npm --workspace @lunarveil/db exec prisma -- migrate deploy --schema prisma/schema.prisma && npm --workspace @lunarveil/api-server run typecheck
     startCommand: npm --workspace @lunarveil/api-server run start
     healthCheckPath: /v1/system/status
     envVars:
