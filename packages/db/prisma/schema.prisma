@@ -1,0 +1,289 @@
+generator client {
+  provider = "prisma-client-js"
+}
+
+datasource db {
+  provider = "postgresql"
+  url      = env("DATABASE_URL")
+}
+
+enum MarketStatus {
+  ACTIVE
+  ADMISSION_PAUSED
+  SETTLEMENT_ONLY
+  DISABLED
+}
+
+enum EpochState {
+  OPEN
+  CLOSED
+  PROVING
+  PENDING_FIRMUP
+  SETTLING
+  FINALIZED
+  RECOMPUTE
+  INVALIDATED
+}
+
+enum OrderState {
+  PENDING_CHAIN
+  ACCEPTED
+  RESERVED
+  PARTIALLY_FILLED
+  FILLED
+  CANCEL_PENDING
+  CANCELLED
+  EXPIRED
+  REJECTED
+}
+
+enum SettlementState {
+  CREATED
+  COLLECTING
+  READY
+  SUBMITTED
+  CONFIRMED
+  FAILED_RECOVERABLE
+  FAILED_FINAL
+}
+
+model Market {
+  id                    String       @id @default(uuid())
+  marketKey             String       @unique
+  baseAssetId           String
+  quoteAssetId          String
+  marketContractAddress String       @unique
+  tickSizeAtomic        String
+  lotSizeAtomic         String
+  epochDurationSeconds  Int
+  maxOrdersPerEpoch     Int
+  minBatchPrivacy       Int
+  maxPriceCollarBps     Int?
+  feeBps                Int          @default(0)
+  matchingRuleVersion   String
+  status                MarketStatus @default(ACTIVE)
+  createdAt             DateTime     @default(now()) @db.Timestamptz(3)
+  updatedAt             DateTime     @updatedAt @db.Timestamptz(3)
+  epochs                Epoch[]
+  orders                OrderEnvelope[]
+  oracleObservations    OracleObservation[]
+}
+
+model Epoch {
+  id                         String     @id @default(uuid())
+  marketId                   String
+  market                     Market     @relation(fields: [marketId], references: [id])
+  sequence                   BigInt
+  state                      EpochState @default(OPEN)
+  startedAt                  DateTime @db.Timestamptz(3)
+  scheduledCloseAt           DateTime @db.Timestamptz(3)
+  closedAt                   DateTime? @db.Timestamptz(3)
+  onchainStartIndex          String
+  onchainEndIndexExclusive   String?
+  orderCount                 Int        @default(0)
+  closeRoot                  String?
+  configHash                 String
+  ruleVersion                String
+  referencePriceHash         String?
+  pendingSolutionCommitment  String?
+  finalSolutionCommitment    String?
+  batchProofTxId             String?
+  settlementTxId             String?
+  createdAt                  DateTime   @default(now()) @db.Timestamptz(3)
+  updatedAt                  DateTime   @updatedAt @db.Timestamptz(3)
+  orders                     OrderEnvelope[]
+  batch                      BatchSolutionRecord?
+
+  @@unique([marketId, sequence])
+  @@index([marketId, state])
+}
+
+model OrderEnvelope {
+  id                   String     @id @default(uuid())
+  clientRequestId      String     @unique @db.Uuid
+  marketId             String
+  market               Market     @relation(fields: [marketId], references: [id])
+  epochId              String
+  epoch                 Epoch      @relation(fields: [epochId], references: [id])
+  commitment           String     @unique
+  encryptionKeyId      String
+  envelopeVersion      Int        @default(1)
+  envelopeAlgorithm    String
+  ephemeralPublicKey   String
+  envelopeSalt         String
+  envelopeNonce        String
+  ciphertext           Bytes
+  traderTagHash        String
+  clientSignature      Bytes
+  chainAdmissionTxId   String?
+  leafIndex            String?
+  state                OrderState @default(PENDING_CHAIN)
+  acceptedAt           DateTime? @db.Timestamptz(3)
+  cancelTxId           String?
+  createdAt            DateTime   @default(now()) @db.Timestamptz(3)
+  updatedAt            DateTime   @updatedAt @db.Timestamptz(3)
+  admissionReconciliations OrderAdmissionReconciliation[]
+  admissionSubmission      OrderAdmissionSubmission?
+
+  @@index([epochId, state])
+  @@index([traderTagHash, epochId])
+}
+
+enum OrderAdmissionSubmissionState {
+  ATTEMPTING
+  SUBMITTED
+  UNCERTAIN
+}
+
+model OrderAdmissionSubmission {
+  id            String                        @id @default(uuid())
+  orderId       String                        @unique
+  order         OrderEnvelope                 @relation(fields: [orderId], references: [id])
+  state         OrderAdmissionSubmissionState @default(ATTEMPTING)
+  publicTxId    String?
+  lastErrorCode String?
+  createdAt     DateTime                      @default(now()) @db.Timestamptz(3)
+  updatedAt     DateTime                      @updatedAt @db.Timestamptz(3)
+
+  @@index([state, createdAt])
+}
+
+enum OrderAdmissionReconciliationState {
+  PAUSED
+  CONFIRMED
+}
+
+model OrderAdmissionReconciliation {
+  id           String                             @id @default(uuid())
+  orderId      String
+  order        OrderEnvelope                      @relation(fields: [orderId], references: [id])
+  state        OrderAdmissionReconciliationState
+  decisionCode String
+  decisionHash String
+  sourceIds    Json
+  admissionTxId String?
+  leafIndex     String?
+  createdAt    DateTime                           @default(now()) @db.Timestamptz(6)
+
+  @@unique([orderId, decisionHash])
+  @@index([orderId, createdAt])
+}
+
+model BatchSolutionRecord {
+  id                        String  @id @default(uuid())
+  epochId                   String  @unique
+  epoch                     Epoch   @relation(fields: [epochId], references: [id])
+  ruleVersion               String
+  solutionCommitment        String  @unique
+  encryptedSolution         Bytes?
+  proofReference            String?
+  status                    String
+  sanitizedOrderCount       Int
+  sanitizedMatchedCount     Int?
+  publicVolume              String?
+  createdAt                 DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt                 DateTime @updatedAt @db.Timestamptz(3)
+  allocations               AllocationEnvelope[]
+  settlements               SettlementSession[]
+}
+
+model AllocationEnvelope {
+  id                String @id @default(uuid())
+  batchId           String
+  batch             BatchSolutionRecord @relation(fields: [batchId], references: [id])
+  traderTagHash     String
+  encryptionKeyId  String
+  ciphertext        Bytes
+  firmDeadline      DateTime @db.Timestamptz(3)
+  state             String
+  createdAt         DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt         DateTime @updatedAt @db.Timestamptz(3)
+
+  @@index([batchId, traderTagHash])
+}
+
+model SettlementSession {
+  id              String @id @default(uuid())
+  batchId         String
+  batch           BatchSolutionRecord @relation(fields: [batchId], references: [id])
+  state           SettlementState @default(CREATED)
+  adapterType     String
+  idempotencyKey  String @unique
+  publicTxId      String?
+  attempt         Int @default(0)
+  lastErrorCode   String?
+  createdAt       DateTime @default(now()) @db.Timestamptz(3)
+  updatedAt       DateTime @updatedAt @db.Timestamptz(3)
+  participantPayloads SettlementParticipantPayload[]
+}
+
+model SettlementParticipantPayload {
+  id                String @id @default(uuid())
+  sessionId         String
+  session           SettlementSession @relation(fields: [sessionId], references: [id])
+  traderTagHash     String
+  ciphertextPayload Bytes
+  state             String
+  receivedAt        DateTime? @db.Timestamptz(3)
+
+  @@unique([sessionId, traderTagHash])
+}
+
+model MatcherKey {
+  keyId         String @id
+  publicKey     Bytes
+  privateKeyRef String
+  algorithm     String
+  activeFrom    DateTime @db.Timestamptz(3)
+  expiresAt     DateTime @db.Timestamptz(3)
+  status        String
+}
+
+model OracleObservation {
+  id          String @id @default(uuid())
+  marketId    String
+  market      Market @relation(fields: [marketId], references: [id])
+  sourceId    String
+  priceTicks  String
+  observedAt  DateTime @db.Timestamptz(3)
+  expiresAt   DateTime @db.Timestamptz(3)
+  signature   Bytes
+  payloadHash String @unique
+
+  @@index([marketId, observedAt])
+}
+
+model IdempotencyRecord {
+  id              String @id @default(uuid())
+  scope           String
+  key             String
+  requestHash     String
+  responseStatus  Int
+  responsePayload Bytes?
+  expiresAt       DateTime @db.Timestamptz(3)
+  createdAt       DateTime @default(now()) @db.Timestamptz(3)
+
+  @@unique([scope, key])
+}
+
+model AuditEvent {
+  id                String @id @default(uuid())
+  kind              String
+  entityType        String
+  entityId          String
+  sanitizedMetadata Json
+  hashChainPrev     String?
+  hashChainCurrent  String
+  createdAt         DateTime @default(now()) @db.Timestamptz(3)
+
+  @@index([entityType, entityId])
+}
+
+model ApiRateLimitWindow {
+  key             String   @id
+  windowStartedAt DateTime @db.Timestamptz(3)
+  count           Int
+  updatedAt       DateTime @db.Timestamptz(3)
+
+  @@index([windowStartedAt])
+}

@@ -1,0 +1,32 @@
+# Dependencies and build output
+node_modules/
+dist/
+coverage/
+*.tsbuildinfo
+apps/web/.next/
+apps/web/.wrangler/
+
+# Environment and logs
+.local-wallet/
+.env
+.env.*
+!.env.example
+*.log
+
+# Midnight compiler and local private state
+contracts/managed/
+**/contracts/managed/
+.midnight-state.json
+.midnight-wallet-state/
+**/.midnight-state.json
+**/.midnight-wallet-state/
+midnight-level-db/
+**/midnight-level-db/
+
+# Local databases and operating-system files
+*.db
+*.db-journal
+.DS_Store
+Thumbs.db
+apps/web/.vinext/
+apps/web/.openai/

@@ -1,0 +1,23 @@
+{
+  "name": "@lunarveil/matcher",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit"
+  },
+  "dependencies": {
+    "@lunarveil/crypto": "0.0.0",
+    "@lunarveil/db": "0.0.0",
+    "@lunarveil/matching-core": "0.0.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "typescript": "^5.9.0",
+    "vitest": "^3.0.0"
+  }
+}

@@ -1,0 +1,43 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lunarveil.local/schemas/batch-solution-v1.schema.json",
+  "title": "BatchSolutionV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version","marketId","epochId","ruleVersion","clearingPriceTicks","totalVolumeLots","fills","activeOrderCommitments","removedConstraintViolations","inputRoot","configHash","canonicalSolutionHash"],
+  "properties": {
+    "version":{"const":1},
+    "marketId":{"type":"string"},
+    "epochId":{"type":"string"},
+    "ruleVersion":{"type":"string"},
+    "clearingPriceTicks":{"type":"string","pattern":"^(0|[1-9][0-9]*)$"},
+    "totalVolumeLots":{"type":"string","pattern":"^(0|[1-9][0-9]*)$"},
+    "fills":{
+      "type":"array",
+      "items":{
+        "type":"object",
+        "additionalProperties":false,
+        "required":["orderCommitment","filledLots"],
+        "properties":{
+          "orderCommitment":{"type":"string","minLength":1},
+          "filledLots":{"type":"string","pattern":"^[1-9][0-9]*$"}
+        }
+      },
+      "uniqueItems":true
+    },
+    "activeOrderCommitments":{
+      "type":"array",
+      "items":{"type":"string","minLength":1},
+      "uniqueItems":true
+    },
+    "removedConstraintViolations":{
+      "type":"array",
+      "items":{"type":"string","minLength":1},
+      "uniqueItems":true
+    },
+    "inputRoot":{"type":"string","minLength":1},
+    "configHash":{"type":"string","minLength":1},
+    "referencePriceHash":{"type":"string","minLength":1},
+    "canonicalSolutionHash":{"type":"string","pattern":"^[0-9a-f]{64}$"}
+  }
+}

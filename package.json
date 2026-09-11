@@ -1,0 +1,47 @@
+{
+  "name": "lunarveil",
+  "private": true,
+  "version": "0.0.0",
+  "type": "module",
+  "engines": {
+    "node": ">=22"
+  },
+  "workspaces": [
+    "apps/*",
+    "packages/*"
+  ],
+  "scripts": {
+    "test": "npm run test --workspaces --if-present",
+    "typecheck": "npm run typecheck --workspaces --if-present",
+    "lint": "npm run lint --workspaces --if-present",
+    "midnight:compile": "npm --prefix spikes/midnight-smoke run compile",
+    "midnight:m2": "npm --prefix spikes/midnight-smoke run verify:m2-compact",
+    "midnight:m2-proofs": "npm --prefix spikes/midnight-smoke run check:m2-proofs",
+    "midnight:m2-chain:typecheck": "npm --prefix spikes/midnight-smoke run typecheck:m2-chain",
+    "midnight:m2-chain:verify": "npm --prefix spikes/midnight-smoke run verify:m2-chain",
+    "midnight:m2-chain": "npm --prefix spikes/midnight-smoke run checkpoint:m2-chain --",
+    "midnight:m3-chain:typecheck": "npm --prefix spikes/midnight-smoke run typecheck:m3-chain",
+    "midnight:m3-chain:verify": "npm --prefix spikes/midnight-smoke run verify:m3-chain",
+    "midnight:m3-chain": "npm --prefix spikes/midnight-smoke run checkpoint:m3-chain --",
+    "midnight:m3-chain:reconcile": "npm --prefix spikes/midnight-smoke run reconcile:m3-chain --",
+    "midnight:m3": "npm --prefix spikes/midnight-smoke run verify:m3-compact",
+    "midnight:m3-proofs": "npm --prefix spikes/midnight-smoke run check:m3-proofs",
+    "midnight:proof-server:install": "npm --prefix spikes/midnight-smoke run proof-server:install",
+    "midnight:proof-server:start": "npm --prefix spikes/midnight-smoke run proof-server:start",
+    "midnight:setup": "npm --prefix spikes/midnight-smoke run setup",
+    "midnight:smoke": "npm --prefix spikes/midnight-smoke run test:e2e",
+    "midnight:typecheck": "npm --prefix spikes/midnight-smoke run build"
+  },
+  "overrides": {
+    "@midnight-ntwrk/compact-runtime": {
+      "@midnight-ntwrk/onchain-runtime-v3": "3.0.0"
+    }
+  },
+  "dependencies": {
+    "@midnight-ntwrk/compact-runtime": "0.16.0",
+    "@midnight-ntwrk/onchain-runtime-v3": "3.0.0"
+  },
+  "devDependencies": {
+    "vite": "8.0.13"
+  }
+}

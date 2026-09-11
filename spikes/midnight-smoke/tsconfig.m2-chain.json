@@ -1,0 +1,19 @@
+{
+  "extends": "./tsconfig.json",
+  "compilerOptions": {
+    "noEmit": true,
+    "rootDir": "."
+  },
+  "include": [
+    "src/m2-chain-checkpoint.ts",
+    "src/m2-reconciliation.ts",
+    "src/network.ts",
+    "src/runtime-secrets.ts",
+    "src/wallet.ts",
+    "scripts/check-m2-public-state.ts",
+    "scripts/check-m2-reconciliation.ts",
+    "scripts/check-runtime-secrets.ts",
+    "contracts/managed/order-commitment/contract/index.d.ts"
+  ],
+  "exclude": ["node_modules", "dist"]
+}

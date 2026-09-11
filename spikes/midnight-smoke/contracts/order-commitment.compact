@@ -1,0 +1,150 @@
+pragma language_version >= 0.23;
+
+import CompactStandardLibrary;
+
+export struct OrderIntentV1 {
+  version: Uint<16>;
+  marketId: Bytes<32>;
+  epochSequence: Uint<64>;
+  ownerPublicKey: Bytes<32>;
+  side: Boolean;
+  orderType: Uint<8>;
+  quantityLots: Uint<128>;
+  limitPriceTicks: Uint<128>;
+  minFillLots: Uint<128>;
+  tif: Uint<8>;
+  allowPartial: Boolean;
+  nonce: Bytes<32>;
+  createdAtMs: Uint<64>;
+  expiresAtMs: Uint<64>;
+}
+
+export ledger orderCommitments: HistoricMerkleTree<2, Bytes<32>>;
+ledger currentOrderCommitments: MerkleTree<2, Bytes<32>>;
+export ledger nextOrderIndex: Counter;
+export ledger currentEpochSequence: Uint<64>;
+export ledger epochClosed: Boolean;
+export ledger closedStartIndex: Uint<64>;
+export ledger closedEndIndexExclusive: Uint<64>;
+export ledger closedOrderCount: Uint<64>;
+export ledger closedRoot: MerkleTreeDigest;
+export ledger closedByRequestKey: Bytes<32>;
+ledger admissionRequestKeys: Set<Bytes<32>>;
+export ledger consumedOrderNullifiers: Set<Bytes<32>>;
+ledger cancellationRequestKeys: Set<Bytes<32>>;
+
+constructor(initialEpochSequence: Uint<64>) {
+  currentEpochSequence = disclose(initialEpochSequence);
+}
+
+export circuit deriveOrderCommitment(
+  order: OrderIntentV1,
+  blinding: Bytes<32>,
+): Bytes<32> {
+  return persistentCommit<[Bytes<32>, OrderIntentV1]>(
+    [pad(32, "LUNARVEIL_ORDER_V1"), order],
+    blinding,
+  );
+}
+
+export circuit deriveOwnerAuthorization(ownerSecret: Bytes<32>): Bytes<32> {
+  return persistentHash<[Bytes<32>, Bytes<32>]>(
+    [pad(32, "LUNARVEIL_OWNER_V1"), ownerSecret]
+  );
+}
+
+export circuit deriveOrderNullifier(
+  commitment: Bytes<32>,
+  ownerSecret: Bytes<32>,
+): Bytes<32> {
+  return persistentCommit<[Bytes<32>, Bytes<32>]>(
+    [pad(32, "LUNARVEIL_NULLIFIER_V1"), commitment],
+    ownerSecret,
+  );
+}
+
+export circuit submitOrderCommitment(
+  epochSequence: Uint<64>,
+  commitment: Bytes<32>,
+  requestKey: Bytes<32>,
+): Uint<64> {
+  assert(epochSequence == currentEpochSequence, "wrong epoch sequence");
+  assert(!epochClosed, "epoch is closed");
+  assert(!orderCommitments.isFull(), "order tree is full");
+  assert(!admissionRequestKeys.member(disclose(requestKey)), "admission request already used");
+
+  const index = nextOrderIndex.read();
+  orderCommitments.insert(disclose(commitment));
+  currentOrderCommitments.insert(disclose(commitment));
+  admissionRequestKeys.insert(disclose(requestKey));
+  nextOrderIndex.increment(1);
+  return index;
+}
+
+export circuit closeEpoch(
+  epochSequence: Uint<64>,
+  proposedCurrentRoot: MerkleTreeDigest,
+  requestKey: Bytes<32>,
+): [] {
+  assert(epochSequence == currentEpochSequence, "wrong epoch sequence");
+  assert(!epochClosed, "epoch is already closed");
+  assert(
+    currentOrderCommitments.checkRoot(disclose(proposedCurrentRoot)),
+    "root is not the current order-tree root"
+  );
+  assert(
+    orderCommitments.checkRoot(disclose(proposedCurrentRoot)),
+    "root is not retained by the historic order tree"
+  );
+
+  const endIndex = nextOrderIndex.read();
+  closedStartIndex = 0;
+  closedEndIndexExclusive = endIndex;
+  closedOrderCount = endIndex;
+  closedRoot = disclose(proposedCurrentRoot);
+  closedByRequestKey = disclose(requestKey);
+  epochClosed = true;
+}
+
+export circuit cancelOrder(
+  order: OrderIntentV1,
+  blinding: Bytes<32>,
+  path: MerkleTreePath<2, Bytes<32>>,
+  leafIndex: Uint<64>,
+  ownerSecret: Bytes<32>,
+  requestKey: Bytes<32>,
+): Bytes<32> {
+  assert(epochClosed, "epoch is not closed");
+  assert(order.epochSequence == currentEpochSequence, "wrong epoch sequence");
+  const publicLeafIndex = disclose(leafIndex);
+  assert(
+    publicLeafIndex >= closedStartIndex && publicLeafIndex < closedEndIndexExclusive,
+    "leaf index is outside the frozen epoch range"
+  );
+
+  const commitment = deriveOrderCommitment(order, blinding);
+  assert(path.leaf == commitment, "opening does not match path leaf");
+  const pathRoot = merkleTreePathRoot<2, Bytes<32>>(path);
+  assert(pathRoot.field == closedRoot.field, "path does not match frozen root");
+  assert(
+    (publicLeafIndex == 0 && path.path[0].goes_left && path.path[1].goes_left) ||
+    (publicLeafIndex == 1 && !path.path[0].goes_left && path.path[1].goes_left) ||
+    (publicLeafIndex == 2 && path.path[0].goes_left && !path.path[1].goes_left) ||
+    (publicLeafIndex == 3 && !path.path[0].goes_left && !path.path[1].goes_left),
+    "Merkle path directions do not match leaf index"
+  );
+  assert(
+    deriveOwnerAuthorization(ownerSecret) == order.ownerPublicKey,
+    "owner authorization failed"
+  );
+
+  const nullifier = deriveOrderNullifier(commitment, ownerSecret);
+  assert(!consumedOrderNullifiers.member(nullifier), "order nullifier is already consumed");
+  assert(
+    !cancellationRequestKeys.member(disclose(requestKey)),
+    "cancellation request already used"
+  );
+  consumedOrderNullifiers.insert(nullifier);
+  cancellationRequestKeys.insert(disclose(requestKey));
+  return nullifier;
+}

@@ -1,0 +1,26 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lunarveil.local/schemas/order-intent-v1.schema.json",
+  "title": "OrderIntentV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version","marketId","epochId","ownerPublicKey","traderTag","side","orderType","quantityLots","limitPriceTicks","minFillLots","tif","allowPartial","nonce","blinding","createdAtMs","expiresAtMs"],
+  "properties": {
+    "version": {"const": 1},
+    "marketId": {"type":"string","minLength":1,"maxLength":128},
+    "epochId": {"type":"string","minLength":1,"maxLength":128},
+    "ownerPublicKey": {"type":"string","minLength":1,"maxLength":512},
+    "traderTag": {"type":"string","minLength":16,"maxLength":256},
+    "side": {"enum":["BUY","SELL"]},
+    "orderType": {"const":"LIMIT"},
+    "quantityLots": {"type":"string","pattern":"^[1-9][0-9]*$"},
+    "limitPriceTicks": {"type":"string","pattern":"^[1-9][0-9]*$"},
+    "minFillLots": {"type":"string","pattern":"^(0|[1-9][0-9]*)$"},
+    "tif": {"enum":["GFE","IOC","FOK"]},
+    "allowPartial": {"type":"boolean"},
+    "nonce": {"type":"string","minLength":32,"maxLength":256},
+    "blinding": {"type":"string","minLength":32,"maxLength":256},
+    "createdAtMs": {"type":"string","pattern":"^(0|[1-9][0-9]*)$"},
+    "expiresAtMs": {"type":"string","pattern":"^(0|[1-9][0-9]*)$"}
+  }
+}

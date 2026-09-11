@@ -1,0 +1,32 @@
+{
+  "name": "@lunarveil/api-server",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "scripts": {
+    "test": "vitest run",
+    "test:integration": "vitest run src/**/*.integration.test.ts",
+    "test:integration:wsl": "wsl.exe -d Ubuntu-24.04 -- env LUNARVEIL_TEST_VITEST_ROOT=apps/api-server LUNARVEIL_TEST_VITEST_FILES=src/endToEnd.integration.test.ts WSLENV=LUNARVEIL_TEST_VITEST_ROOT:LUNARVEIL_TEST_VITEST_FILES bash ../../packages/db/scripts/test-postgres-wsl.sh",
+    "typecheck": "tsc --noEmit",
+    "start": "tsx src/main.ts"
+  },
+  "dependencies": {
+    "@lunarveil/api": "0.0.0",
+    "@lunarveil/crypto": "0.0.0",
+    "@lunarveil/db": "0.0.0",
+    "@lunarveil/matcher": "0.0.0",
+    "@lunarveil/wallet-auth": "0.0.0",
+    "@midnight-ntwrk/ledger-v8": "^8.1.0",
+    "pg": "8.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/pg": "8.23.1",
+    "tsx": "^4.23.13",
+    "typescript": "^5.9.0",
+    "vitest": "^3.0.0"
+  }
+}

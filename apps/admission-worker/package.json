@@ -1,0 +1,25 @@
+{
+  "name": "@lunarveil/admission-worker",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "exports": { ".": "./src/index.ts" },
+  "scripts": {
+    "test": "vitest run",
+    "typecheck": "tsc --noEmit",
+    "start": "tsx src/main.ts"
+  },
+  "dependencies": {
+    "@lunarveil/api": "0.0.0",
+    "@lunarveil/db": "0.0.0",
+    "@lunarveil/matcher": "0.0.0",
+    "pg": "8.23.0"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/pg": "8.23.1",
+    "tsx": "^4.23.13",
+    "typescript": "^5.9.0",
+    "vitest": "^3.0.0"
+  }
+}

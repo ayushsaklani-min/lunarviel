@@ -1,0 +1,28 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://lunarveil.local/schemas/order-envelope-v1.schema.json",
+  "title": "OrderEnvelopeV1",
+  "type": "object",
+  "additionalProperties": false,
+  "required": ["version","clientRequestId","marketId","epochId","commitment","traderTagHash","encryptionKeyId","ciphertext","clientSignature"],
+  "properties": {
+    "version": {"const":1},
+    "clientRequestId": {"type":"string","format":"uuid"},
+    "marketId": {"type":"string","minLength":1,"maxLength":128},
+    "epochId": {"type":"string","minLength":1,"maxLength":128},
+    "commitment": {"type":"string","minLength":32,"maxLength":512},
+    "traderTagHash": {"type":"string","minLength":32,"maxLength":512},
+    "encryptionKeyId": {"type":"string","minLength":1,"maxLength":128},
+    "ciphertext": {"type":"string","contentEncoding":"base64","minLength":32},
+    "clientSignature": {"type":"string","minLength":32,"maxLength":2048},
+    "chainAdmission": {
+      "type":"object",
+      "additionalProperties": false,
+      "required":["txId"],
+      "properties": {
+        "txId":{"type":"string","minLength":1,"maxLength":512},
+        "leafIndex":{"type":"string","pattern":"^[0-9]+$"}
+      }
+    }
+  }
+}

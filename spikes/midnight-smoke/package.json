@@ -1,0 +1,73 @@
+{
+  "name": "midnight-smoke",
+  "version": "1.0.0",
+  "type": "module",
+  "description": "A Midnight Network application created with create-mn-app",
+  "author": "",
+  "license": "MIT",
+  "scripts": {
+    "compile": "node scripts/compile-contract.mjs",
+    "compile:m2": "node scripts/compile-contract.mjs contracts/order-commitment.compact contracts/managed/order-commitment",
+    "compile:m3": "node scripts/compile-contract.mjs contracts/fair-clearing-n4.compact contracts/managed/fair-clearing-n4",
+    "check:m2-vector": "node scripts/check-m2-commitment-vector.mjs",
+    "check:m2-state": "node scripts/check-m2-state-machine.mjs",
+    "check:m2-proofs": "node scripts/check-m2-proofs.mjs",
+    "check:m2-public-state": "tsx scripts/check-m2-public-state.ts",
+    "check:m3-public-state": "tsx scripts/check-m3-public-state.ts",
+    "check:m2-reconciliation": "tsx scripts/check-m2-reconciliation.ts",
+    "check:runtime-secrets": "tsx scripts/check-runtime-secrets.ts",
+    "typecheck:m2-chain": "npm run compile:m2 && tsc --noEmit -p tsconfig.m2-chain.json",
+    "verify:m2-chain": "npm run typecheck:m2-chain && npm run check:m2-public-state && npm run check:m2-reconciliation && npm run check:runtime-secrets",
+    "checkpoint:m2-chain": "npm run verify:m2-chain && tsx src/m2-chain-checkpoint.ts",
+    "typecheck:m3-chain": "npm run compile:m3 && tsc --noEmit -p tsconfig.m3-chain.json",
+    "verify:m3-chain": "npm run typecheck:m3-chain && npm run check:m3-public-state && npm run check:runtime-secrets",
+    "checkpoint:m3-chain": "npm run verify:m3-chain && tsx src/m3-chain-checkpoint.ts",
+    "reconcile:m3-chain": "tsx src/m3-chain-checkpoint.ts --verify-only",
+    "verify:m2-compact": "npm run compile:m2 && npm run check:m2-vector && npm run check:m2-state",
+    "check:m3-fairness": "node scripts/check-m3-fairness.mjs",
+    "check:m3-proofs": "node scripts/check-m3-proofs.mjs",
+    "verify:m3-compact": "npm run compile:m3 && npm run check:m3-fairness",
+    "build": "tsc --noEmit",
+    "setup": "npx tsx src/setup.ts",
+    "deploy": "npx tsx src/deploy.ts",
+    "cli": "npx tsx src/cli.ts",
+    "check-balance": "npx tsx src/check-balance.ts",
+    "network": "npx tsx src/network.ts",
+    "proof-server:inspect": "wsl.exe -d Ubuntu-24.04 -- bash scripts/proof-server-wsl.sh inspect",
+    "proof-server:install": "wsl.exe -d Ubuntu-24.04 -- bash scripts/proof-server-wsl.sh extract",
+    "proof-server:start": "wsl.exe -d Ubuntu-24.04 -- bash scripts/proof-server-wsl.sh run",
+    "clean": "rm -rf contracts/managed .midnight-state.json .midnight-wallet-state",
+    "test": "npm run build",
+    "test:e2e": "tsx scripts/e2e-check.ts"
+  },
+  "dependencies": {
+    "@lunarveil/midnight": "file:../../packages/midnight",
+    "@midnight-ntwrk/compact-runtime": "0.16.0",
+    "@midnight-ntwrk/midnight-js-contracts": "4.1.1",
+    "@midnight-ntwrk/midnight-js-http-client-proof-provider": "4.1.1",
+    "@midnight-ntwrk/midnight-js-indexer-public-data-provider": "4.1.1",
+    "@midnight-ntwrk/midnight-js-level-private-state-provider": "4.1.1",
+    "@midnight-ntwrk/midnight-js-network-id": "4.1.1",
+    "@midnight-ntwrk/midnight-js-node-zk-config-provider": "4.1.1",
+    "@midnight-ntwrk/midnight-js-protocol": "4.1.1",
+    "@midnight-ntwrk/midnight-js-types": "4.1.1",
+    "@midnight-ntwrk/midnight-js-utils": "4.1.1",
+    "@midnight-ntwrk/onchain-runtime-v3": "3.0.0",
+    "@midnight-ntwrk/wallet-sdk": "1.2.0",
+    "rxjs": "^7.8.2",
+    "ws": "^8.21.1"
+  },
+  "devDependencies": {
+    "@types/node": "^22.0.0",
+    "@types/ws": "^8.18.1",
+    "tsx": "^4.23.1",
+    "typescript": "^6.0.3"
+  },
+  "overrides": {
+    "@midnight-ntwrk/onchain-runtime-v3": "3.0.0"
+  },
+  "engines": {
+    "node": ">=22.0.0"
+  },
+  "keywords": ["midnight", "blockchain", "zero-knowledge", "privacy"]
+}

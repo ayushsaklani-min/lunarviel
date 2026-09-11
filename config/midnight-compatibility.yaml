@@ -1,0 +1,35 @@
+# Source authority: Midnight official compatibility matrix checked 2026-08-26.
+# Codex: verify before first install, then pin exact working package versions in package-lock.json.
+project_network: preprod
+nodejs:
+  major: 22
+midnight:
+  node: "1.0.2"
+  compact_devtools: "0.5.1"
+  compact_toolchain: "0.31.1"
+  compact_runtime_matrix_tested: "0.16.0"
+  compact_js: "2.5.1"
+  platform_js: "2.2.4"
+  onchain_runtime: "3.0.0"
+  wallet_sdk: "1.2.0"
+  midnight_js: "4.1.1"
+  testkit_js: "4.1.1"
+  dapp_connector_api: "4.0.1"
+  indexer: "4.3.3-hotfix"
+  proof_server: "8.1.0"
+  zswap_api_reference_observed: "4.0.0-rc"
+  zswap_policy: "isolate behind adapter; inspect installed source/types; do not guess API"
+preprod:
+  rpc: "https://rpc.preprod.midnight.network"
+  indexer_http: "https://indexer.preprod.midnight.network/api/v4/graphql"
+  faucet: "https://midnight-tmnight-preprod.nethermind.dev/"
+preview:
+  rpc: "https://rpc.preview.midnight.network"
+  indexer_http: "https://indexer.preview.midnight.network/api/v4/graphql"
+  faucet: "https://midnight-tmnight-preview.nethermind.dev/"
+proof_server:
+  port: 6300
+  privacy_rule: "self-host/control for sensitive witnesses"
+compact:
+  minimum_language_pragma_seen_in_current_quickstart: ">= 0.23"
+  compile_policy: "compile after every meaningful contract change"

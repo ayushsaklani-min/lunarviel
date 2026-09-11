@@ -1,0 +1,337 @@
+openapi: 3.1.0
+info:
+  title: Lunarveil Coordination API
+  version: 0.2.0
+  description: >-
+    Current M6 HTTP boundary for encrypted-order admission and optional
+    recipient-encrypted allocation/firm-up transport. The API is never the
+    canonical ledger.
+servers:
+  - url: http://localhost:4000
+paths:
+  /healthz:
+    get:
+      summary: Sanitized process health
+      responses:
+        '200':
+          description: Ready
+          content: {application/json: {schema: {$ref: '#/components/schemas/Health'}}}
+  /readyz:
+    get:
+      summary: Dependency readiness probe
+      description: >-
+        Ready only when DATABASE, MATCHER, CHAIN_SOURCE, PROVER and KMS are all
+        present exactly once and READY. Incomplete, duplicated, unready or
+        unsanitizable status fails closed as a sanitized 503.
+      responses:
+        '200': {description: All injected dependencies ready, content: {application/json: {schema: {$ref: '#/components/schemas/Health'}}}}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+  /v1/matcher-key:
+    get:
+      summary: Get active matcher envelope-encryption public key
+      responses:
+        '200': {description: Active public key metadata, content: {application/json: {schema: {$ref: '#/components/schemas/MatcherKey'}}}}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+  /v1/markets:
+    get:
+      summary: List public market configuration
+      responses:
+        '200': {description: Public market catalog, content: {application/json: {schema: {type: object, additionalProperties: false, required: [markets], properties: {markets: {type: array, items: {$ref: '#/components/schemas/Market'}}}}}}}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+  /v1/markets/{marketId}/epoch:
+    get:
+      summary: Get current public epoch state
+      parameters:
+        - name: marketId
+          in: path
+          required: true
+          schema: {type: string, minLength: 1, maxLength: 128}
+      responses:
+        '200': {description: Public epoch state, content: {application/json: {schema: {$ref: '#/components/schemas/Epoch'}}}}
+        '404': {$ref: '#/components/responses/RequestRejected'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+  /v1/system/status:
+    get:
+      summary: Get sanitized dependency status
+      description: >-
+        Returns allowlisted component names and states only; any additional
+        provider field is dropped. A claimed READY state is downgraded to
+        DEGRADED unless every required component is present and READY.
+      responses:
+        '200': {description: Allowlisted dependency states only, content: {application/json: {schema: {$ref: '#/components/schemas/SystemStatus'}}}}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+  /v1/epochs/{epochId}/allocation:
+    get:
+      summary: Get a recipient-encrypted allocation envelope
+      security: [{bearerAuth: []}]
+      parameters:
+        - name: epochId
+          in: path
+          required: true
+          schema: {type: string, minLength: 1, maxLength: 128}
+      responses:
+        '200': {description: Encrypted allocation metadata, content: {application/json: {schema: {$ref: '#/components/schemas/AllocationResponse'}}}}
+        '401': {$ref: '#/components/responses/RequestRejected'}
+        '404': {$ref: '#/components/responses/RequestRejected'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+  /v1/epochs/{epochId}/firmup:
+    post:
+      summary: Submit an encrypted participant firm-up payload
+      security: [{bearerAuth: []}]
+      parameters:
+        - name: epochId
+          in: path
+          required: true
+          schema: {type: string, minLength: 1, maxLength: 128}
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/FirmupRequest'}}}
+      responses:
+        '200': {description: Redacted firm-up state, content: {application/json: {schema: {$ref: '#/components/schemas/FirmupResponse'}}}}
+        '400': {$ref: '#/components/responses/RequestRejected'}
+        '401': {$ref: '#/components/responses/RequestRejected'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+  /v1/sessions/challenges:
+    post:
+      summary: Create one-time wallet-auth challenge
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/CreateChallengeRequest'}}}
+      responses:
+        '200': {description: Challenge, content: {application/json: {schema: {$ref: '#/components/schemas/Challenge'}}}}
+        '400': {$ref: '#/components/responses/RequestRejected'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+  /v1/sessions/verify:
+    post:
+      summary: Verify challenge and receive short-lived bearer token
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/VerifyChallengeRequest'}}}
+      responses:
+        '200': {description: Session, content: {application/json: {schema: {$ref: '#/components/schemas/Session'}}}}
+        '400': {$ref: '#/components/responses/RequestRejected'}
+        '401': {$ref: '#/components/responses/RequestRejected'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+  /v1/orders:
+    get:
+      summary: List the authenticated trader's own orders
+      description: >-
+        Workflow metadata only. The trader tag is derived from the session, so
+        there is no parameter through which one caller could read another
+        trader's orders. Order contents never leave the ciphertext.
+      security: [{bearerAuth: []}]
+      parameters:
+        - name: limit
+          in: query
+          required: false
+          schema: {type: integer, minimum: 1, maximum: 200}
+      responses:
+        '200': {description: The caller's own orders, content: {application/json: {schema: {type: object, additionalProperties: false, required: [orders], properties: {orders: {type: array, items: {$ref: '#/components/schemas/TraderOrder'}}}}}}}
+        '400': {$ref: '#/components/responses/RequestRejected'}
+        '401': {$ref: '#/components/responses/RequestRejected'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+    post:
+      summary: Submit encrypted order envelope
+      description: HTTP success stays PENDING_CHAIN until trusted chain reconciliation.
+      security: [{bearerAuth: []}]
+      requestBody:
+        required: true
+        content: {application/json: {schema: {$ref: '#/components/schemas/SubmitOrderRequest'}}}
+      responses:
+        '200': {description: Ciphertext submission result, content: {application/json: {schema: {$ref: '#/components/schemas/OrderSubmission'}}}}
+        '400': {$ref: '#/components/responses/RequestRejected'}
+        '401': {$ref: '#/components/responses/RequestRejected'}
+        '403': {$ref: '#/components/responses/RequestRejected'}
+        '413': {$ref: '#/components/responses/RequestRejected'}
+        '503': {$ref: '#/components/responses/ServiceUnavailable'}
+components:
+  securitySchemes:
+    bearerAuth: {type: http, scheme: bearer}
+  schemas:
+    Health:
+      type: object
+      additionalProperties: false
+      required: [status]
+      properties: {status: {type: string, const: ready}}
+    MatcherKey:
+      type: object
+      additionalProperties: false
+      required: [version, keyId, algorithm, publicKey, activeFromMs, expiresAtMs]
+      properties:
+        version: {type: integer, const: 1}
+        keyId: {type: string}
+        algorithm: {type: string, const: X25519-HKDF-SHA256-AES-256-GCM}
+        publicKey: {$ref: '#/components/schemas/Base64Url'}
+        activeFromMs: {$ref: '#/components/schemas/Decimal'}
+        expiresAtMs: {$ref: '#/components/schemas/Decimal'}
+    Market:
+      type: object
+      additionalProperties: false
+      required: [id, marketKey, baseAssetId, quoteAssetId, tickSizeAtomic, lotSizeAtomic, epochDurationSeconds, maxOrdersPerEpoch, minBatchPrivacy, matchingRuleVersion, status]
+      properties:
+        id: {type: string}
+        marketKey: {type: string}
+        baseAssetId: {type: string}
+        quoteAssetId: {type: string}
+        tickSizeAtomic: {$ref: '#/components/schemas/Decimal'}
+        lotSizeAtomic: {$ref: '#/components/schemas/Decimal'}
+        epochDurationSeconds: {type: integer, minimum: 1}
+        maxOrdersPerEpoch: {type: integer, minimum: 1}
+        minBatchPrivacy: {type: integer, minimum: 1}
+        matchingRuleVersion: {type: string}
+        status: {enum: [ACTIVE, ADMISSION_PAUSED, SETTLEMENT_ONLY, DISABLED]}
+    Epoch:
+      type: object
+      additionalProperties: false
+      required: [id, marketId, sequence, state, orderCount, maxOrders, scheduledCloseAtMs, ruleVersion, configHash]
+      properties:
+        id: {type: string}
+        marketId: {type: string}
+        sequence: {$ref: '#/components/schemas/Decimal'}
+        state: {enum: [OPEN, CLOSED, PROVING, PENDING_FIRMUP, SETTLING, FINALIZED, RECOMPUTE, INVALIDATED]}
+        orderCount: {type: integer, minimum: 0}
+        maxOrders: {type: integer, minimum: 1}
+        scheduledCloseAtMs: {$ref: '#/components/schemas/Decimal'}
+        ruleVersion: {type: string}
+        configHash: {type: string}
+    SystemStatus:
+      type: object
+      additionalProperties: false
+      required: [state, components]
+      properties:
+        state: {$ref: '#/components/schemas/DependencyState'}
+        components:
+          type: array
+          items:
+            type: object
+            additionalProperties: false
+            required: [name, state]
+            properties:
+              name: {enum: [DATABASE, MATCHER, CHAIN_SOURCE, PROVER, KMS]}
+              state: {$ref: '#/components/schemas/DependencyState'}
+    DependencyState: {enum: [READY, DEGRADED, UNAVAILABLE, PAUSED]}
+    CreateChallengeRequest:
+      type: object
+      additionalProperties: false
+      required: [domain, walletIdentity]
+      properties:
+        domain: {type: string, minLength: 1, maxLength: 255}
+        walletIdentity: {type: string, minLength: 1, maxLength: 256}
+    Challenge:
+      type: object
+      additionalProperties: false
+      required: [id, domain, walletIdentity, nonce, issuedAtMs, expiresAtMs]
+      properties:
+        id: {type: string}
+        domain: {type: string}
+        walletIdentity: {type: string}
+        nonce: {$ref: '#/components/schemas/Base64Url'}
+        issuedAtMs: {$ref: '#/components/schemas/Decimal'}
+        expiresAtMs: {$ref: '#/components/schemas/Decimal'}
+    VerifyChallengeRequest:
+      type: object
+      additionalProperties: false
+      required: [challengeId, signature]
+      properties:
+        challengeId: {type: string, minLength: 1, maxLength: 128}
+        signature: {$ref: '#/components/schemas/Base64Url'}
+        verifyingKey: {type: string, minLength: 2, maxLength: 512, pattern: '^[0-9a-fA-F]+$'}
+        signedData: {$ref: '#/components/schemas/Base64Url'}
+    Session:
+      type: object
+      additionalProperties: false
+      required: [token, expiresAtMs]
+      properties:
+        token: {$ref: '#/components/schemas/Base64Url'}
+        expiresAtMs: {$ref: '#/components/schemas/Decimal'}
+        traderTagHash: {type: string, pattern: '^[0-9a-f]{64}$'}
+    SubmitOrderRequest:
+      type: object
+      additionalProperties: false
+      required: [envelope, clientSignature]
+      properties:
+        envelope: {$ref: '#/components/schemas/OrderEnvelopeV1'}
+        clientSignature: {$ref: '#/components/schemas/Base64Url'}
+        verifyingKey: {type: string, minLength: 2, maxLength: 512, pattern: '^[0-9a-fA-F]+$'}
+        signedData: {$ref: '#/components/schemas/Base64Url'}
+    OrderEnvelopeV1:
+      type: object
+      additionalProperties: false
+      required: [version, clientRequestId, marketId, epochId, commitment, traderTagHash, encryptionKeyId, algorithm, ephemeralPublicKey, salt, nonce, ciphertext]
+      properties:
+        version: {type: integer, const: 1}
+        clientRequestId: {type: string, minLength: 36, maxLength: 36}
+        marketId: {type: string, minLength: 1, maxLength: 128}
+        epochId: {type: string, minLength: 1, maxLength: 128}
+        commitment: {type: string, pattern: '^[0-9a-f]{64}$'}
+        traderTagHash: {type: string, pattern: '^[0-9a-f]{64}$'}
+        encryptionKeyId: {type: string, minLength: 1, maxLength: 128}
+        algorithm: {type: string, const: X25519-HKDF-SHA256-AES-256-GCM}
+        ephemeralPublicKey: {$ref: '#/components/schemas/Base64Url'}
+        salt: {$ref: '#/components/schemas/Base64Url'}
+        nonce: {$ref: '#/components/schemas/Base64Url'}
+        ciphertext: {$ref: '#/components/schemas/Base64Url'}
+    TraderOrder:
+      type: object
+      additionalProperties: false
+      required: [orderId, clientRequestId, marketId, epochId, commitment, state, createdAtMs]
+      properties:
+        orderId: {type: string}
+        clientRequestId: {type: string}
+        marketId: {type: string}
+        epochId: {type: string}
+        commitment: {type: string, pattern: '^[0-9a-f]{64}$'}
+        state: {enum: [PENDING_CHAIN, ACCEPTED, RESERVED, PARTIALLY_FILLED, FILLED, CANCEL_PENDING, CANCELLED, EXPIRED, REJECTED]}
+        createdAtMs: {$ref: '#/components/schemas/Decimal'}
+        acceptedAtMs: {$ref: '#/components/schemas/Decimal'}
+        chainAdmissionTxId: {type: string}
+        leafIndex: {$ref: '#/components/schemas/Decimal'}
+    OrderSubmission:
+      type: object
+      additionalProperties: false
+      required: [orderId, clientRequestId, state, replayed, createdAtMs]
+      properties:
+        orderId: {type: string}
+        clientRequestId: {type: string}
+        state: {enum: [PENDING_CHAIN, ACCEPTED, REJECTED]}
+        replayed: {type: boolean}
+        createdAtMs: {$ref: '#/components/schemas/Decimal'}
+    AllocationResponse:
+      type: object
+      additionalProperties: false
+      required: [envelope, solutionCommitment, firmDeadlineMs]
+      properties:
+        envelope: {type: object, additionalProperties: true, description: Recipient-encrypted allocation envelope; never plaintext}
+        solutionCommitment: {type: string, pattern: '^[0-9a-f]{64}$'}
+        firmDeadlineMs: {$ref: '#/components/schemas/Decimal'}
+    FirmupRequest:
+      type: object
+      additionalProperties: false
+      required: [allocationId, clientRequestId, ciphertextPayload]
+      properties:
+        allocationId: {type: string, minLength: 1, maxLength: 128}
+        clientRequestId: {type: string, minLength: 36, maxLength: 36}
+        ciphertextPayload: {type: string, minLength: 2, maxLength: 65536, pattern: '^[A-Za-z0-9_-]+$'}
+    FirmupResponse:
+      type: object
+      additionalProperties: false
+      required: [state, replayed]
+      properties:
+        state: {enum: [RECEIVED, READY, RECOMPUTE_REQUIRED]}
+        replayed: {type: boolean}
+    Base64Url: {type: string, minLength: 1, maxLength: 65536, pattern: '^[A-Za-z0-9_-]+$'}
+    Decimal: {type: string, pattern: '^[0-9]+$'}
+    Error:
+      type: object
+      additionalProperties: false
+      required: [error, code]
+      properties:
+        error: {enum: [REQUEST_REJECTED, SERVICE_UNAVAILABLE, INTERNAL_ERROR]}
+        code: {type: string}
+  responses:
+    RequestRejected:
+      description: Sanitized validation/authentication/authorization rejection
+      content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
+    ServiceUnavailable:
+      description: Sanitized dependency failure
+      content: {application/json: {schema: {$ref: '#/components/schemas/Error'}}}
