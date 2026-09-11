@@ -105,8 +105,8 @@ const LOCK_EPOCH = `
 const INSERT_BATCH = `
   INSERT INTO "BatchSolutionRecord" (
     "id", "epochId", "ruleVersion", "solutionCommitment", "encryptedSolution",
-    "proofReference", "status", "sanitizedOrderCount", "sanitizedMatchedCount", "publicVolume"
-  ) VALUES ($1, $2, $3, $4, NULL, NULL, 'PROOF_PENDING', $5, $6, NULL)
+    "proofReference", "status", "sanitizedOrderCount", "sanitizedMatchedCount", "publicVolume", "updatedAt"
+  ) VALUES ($1, $2, $3, $4, NULL, NULL, 'PROOF_PENDING', $5, $6, NULL, CURRENT_TIMESTAMP)
   ON CONFLICT ("epochId") DO NOTHING
   RETURNING "id"
 `;
@@ -225,9 +225,18 @@ export class PostgresClosedEpochBatchRepositoryV1 {
       try {
         const locked = await client.query<{ state: string; configHash: string; closeRoot: string | null; orderCount: number }>(LOCK_EPOCH, [candidate.epochId]);
         const epoch = locked.rows[0];
-        if (!epoch || epoch.state !== 'CLOSED' || epoch.configHash !== candidate.configHash
+        if (!epoch || !['CLOSED', 'PROVING'].includes(epoch.state) || epoch.configHash !== candidate.configHash
           || epoch.closeRoot !== candidate.inputRoot || epoch.orderCount !== candidate.orderCount) {
           throw new ClosedEpochBatchRepositoryError('INVALID_STATE');
+        }
+        if (epoch.state === 'PROVING') {
+          const existing = await client.query<{ id: string; solutionCommitment: string }>(SELECT_BATCH, [candidate.epochId]);
+          const batch = existing.rows[0];
+          if (!batch || batch.solutionCommitment !== solution.canonicalSolutionHash) {
+            throw new ClosedEpochBatchRepositoryError('INVALID_STATE');
+          }
+          await client.query('COMMIT');
+          return { outcome: 'REPLAYED', batchId: batch.id };
         }
         const inserted = await client.query<{ id: string }>(INSERT_BATCH, [
           this.newId(), candidate.epochId, candidate.ruleVersion, solution.canonicalSolutionHash,

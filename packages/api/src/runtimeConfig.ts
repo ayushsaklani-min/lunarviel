@@ -98,7 +98,9 @@ export function parseLunarveilRuntimeConfigV1(env: RuntimeEnv = process.env): Lu
   return {
     environment: current,
     host,
-    port: port(env.LUNARVEIL_API_PORT),
+    // Render and other Node hosts provide PORT. An explicit Lunarveil value
+    // still wins so local configuration remains deterministic.
+    port: port(env.LUNARVEIL_API_PORT ?? env.PORT),
     bodyLimitBytes: 64 * 1024,
     allowedOrigins: configuredOrigins,
     trustProxy: env.LUNARVEIL_TRUST_PROXY === 'true',

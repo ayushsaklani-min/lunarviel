@@ -1,0 +1,34 @@
+services:
+  - type: web
+    name: lunarveil-web-preview
+    runtime: node
+    plan: free
+    buildCommand: npm ci && NITRO_PRESET=node npm --workspace @lunarveil/web run build
+    startCommand: node apps/web/.output/server/index.mjs
+    healthCheckPath: /
+    envVars:
+      - key: NODE_VERSION
+        value: 22.19.0
+      - key: LUNARVEIL_API_BASE_URL
+        sync: false
+
+  - type: web
+    name: lunarveil-api-preview
+    runtime: node
+    plan: free
+    buildCommand: npm ci && npm --workspace @lunarveil/api-server run typecheck
+    startCommand: npm --workspace @lunarveil/api-server run start
+    healthCheckPath: /v1/system/status
+    envVars:
+      - key: NODE_VERSION
+        value: 22.19.0
+      - key: LUNARVEIL_ENV
+        value: development
+      - key: LUNARVEIL_API_HOST
+        value: 0.0.0.0
+      - key: LUNARVEIL_DATABASE_URL
+        sync: false
+      - key: LUNARVEIL_TRADER_TAG_KEY
+        sync: false
+      - key: LUNARVEIL_ALLOWED_ORIGINS
+        sync: false

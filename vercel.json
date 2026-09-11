@@ -1,0 +1,6 @@
+{
+  "$schema": "https://openapi.vercel.sh/vercel.json",
+  "installCommand": "npm ci",
+  "buildCommand": "NITRO_PRESET=vercel npm --workspace @lunarveil/web run build",
+  "outputDirectory": "apps/web/.output"
+}

@@ -1,150 +1,138 @@
-# Lunarveil — Codex Engineering Handoff
+# Lunarveil
 
-**Project:** Lunarveil
-**Target:** AKINDO × Midnight Buildathon 2026
-**Architecture baseline:** 2026-08-26
-**Status:** Architecture locked for implementation spikes; no production claims yet.
+A private batch exchange prototype on Midnight. Traders encrypt limit orders;
+a deterministic matcher computes a clearing solution, and bounded Compact
+circuits check the frozen order set and allocation rules.
 
-> **Lunarveil is a verifiably fair private batch exchange on Midnight. Traders keep order price, size and strategy off the public ledger; a deterministic batch matcher computes the outcome; Compact verifies that the frozen order set was cleared according to published rules; Zswap is used for private atomic asset settlement.**
+**Development preview:** the full live order-to-settlement flow is incomplete.
+V1 hides order details from the public chain, but the matcher decrypts orders
+in memory. Do not use this prototype with real funds.
 
-This folder is the implementation contract for Codex. Start with `IMPLEMENTATION_START_HERE.md`, then obey `AGENTS.md`.
+## Repository
 
-## What makes Lunarveil different
+| Directory | Responsibility |
+| --- | --- |
+| `apps/web` | Moon landing experience and markets UI |
+| `apps/api-server` | API process, wallet sessions and encrypted order intake |
+| `apps/admission-worker` | Durable admission-submission worker |
+| `apps/reconciler` | Indexer observations and admission reconciliation |
+| `apps/matcher` | Epoch-close scheduler |
+| `packages/matching-core` | Pure bigint batch matching and adversarial/property tests |
+| `packages/crypto` | Commitments and encrypted order/allocation envelopes |
+| `packages/db` | PostgreSQL repositories, Prisma schema and migrations |
+| `packages/matcher` | Lifecycle services and in-memory batch preparation |
+| `packages/api`, `packages/api-client` | HTTP boundary and typed browser client |
+| `packages/chain`, `packages/midnight`, `packages/wallet-auth` | Chain and wallet adapters |
+| `packages/settlement` | Typed pairwise intent adapter and tests |
+| `spikes/midnight-smoke` | Isolated Compact contracts, compiler/proof checks and chain experiments |
+| `schemas`, `openapi`, `config` | Wire contracts and pinned Midnight compatibility |
 
-A normal public DEX is transparent but leaks order flow. A traditional dark pool hides order flow but asks users to trust the operator's matching. Lunarveil aims to combine:
+## Quick start
 
-1. **Pre-trade privacy** — raw order side, limit price, size and strategy are not published on-chain.
-2. **Frozen order-set integrity** — the accepted order set is committed before matching.
-3. **Deterministic frequent-batch clearing** — no discretionary operator priority.
-4. **Verifiable execution** — Compact verifies the batch solution against the committed order set.
-5. **Private atomic settlement** — Zswap / Midnight wallet intent primitives are the settlement base; no custom custody escrow for the main path.
-6. **Auditability without universal disclosure** — users can export an audit bundle proving order inclusion, rules and settlement.
+Requires Node.js 22+ and npm. Install the locked dependencies from the root:
 
-## V1 trust statement
-
-V1 is **private against the public chain and ordinary observers, but not against the single matcher**. The matcher decrypts orders in controlled memory to compute the batch. The matcher cannot change the published matching rule without failing verification. A later threshold/MPC matcher removes this confidentiality trust boundary.
-
-Never market V1 as “the matcher cannot see orders.”
-
-## Repository package map
-
-- `docs/00_research.md` — benchmark research and source-backed lessons.
-- `docs/01_protocol_decisions.md` — locked ADR-style product/protocol decisions.
-- `docs/02_threat_model.md` — assets, actors, threats, mitigations, residual risks.
-- `docs/03_architecture.md` — full system architecture and trust boundaries.
-- `docs/04_midnight_integration.md` — pinned Midnight stack and integration rules.
-- `docs/05_contract_spec.md` — Compact contract state/circuit specification.
-- `docs/06_matching_engine.md` — deterministic FBA algorithm and invariants.
-- `docs/07_api_spec.md` — REST/WebSocket behavior and idempotency.
-- `docs/08_data_model.md` — database/storage model; ciphertext-only order storage.
-- `docs/09_failure_modes.md` — failure matrix and recovery semantics.
-- `docs/10_test_strategy.md` — unit/property/contract/integration/privacy/chaos testing.
-- `docs/11_repo_structure.md` — target monorepo structure.
-- `docs/12_implementation_plan.md` — phase-by-phase Codex execution plan.
-- `docs/13_privacy_data_classification.md` — what may and may not be exposed.
-- `docs/14_operations_security.md` — key/prover/logging/deployment operational controls.
-- `config/midnight-compatibility.yaml` — version and endpoint lock.
-- `openapi/lunarveil.openapi.yaml` — initial public API contract.
-- `schemas/*.json` — wire schemas for private intent/envelope/batch.
-- `packages/matching-core/src/clearBatch.ts` — executable deterministic reference matcher.
-- `packages/matching-core/src/canonical.ts` — canonical bigint transport and solution hashing.
-- `packages/db/` — ciphertext-only PostgreSQL envelope repository and Prisma schema/migration material.
-- `packages/api/` — injected Fastify boundary for session, encrypted-order, optional encrypted-allocation and ciphertext-only firm-up routes; no live listener/configuration.
-- `contracts/*/*.compact.pseudocode` — Compact-oriented specs; compile before converting to real contract code.
-- `AGENTS.md` — non-negotiable instructions for Codex.
-
-## Immediate build goal
-
-The first end-to-end milestone is deliberately narrow:
-
-```text
-2–8 wallets
-   ↓
-private LIMIT intents
-   ↓
-commitments included in frozen epoch root
-   ↓
-deterministic batch clearing
-   ↓
-Compact proof rejects malicious/incorrect solution
-   ↓
-matched users firm-up exact settlement
-   ↓
-Zswap-backed atomic exchange on local Midnight
+```sh
+npm ci
+npm run typecheck
+npm test
+npm --workspace @lunarveil/web run dev
 ```
 
-Only after that works do we expand to 16/32 orders, Preprod, midpoint peg, compliance credentials, multi-matcher or MPC.
+The landing page does not require a database or wallet. The markets view
+requires the API, whose default browser origin is configured below.
+No local hosting metadata is required to build the frontend.
 
-## Verified baseline and current Docker-free workflow
+```sh
+npm --workspace @lunarveil/web run build
+```
 
-Milestone 0 previously verified the complete hello-world flow with a disposable Docker node/indexer/proof-server stack. That result remains reproducibility evidence, but Docker is not part of the active M2 workflow. Exact versions, evidence, deviations, and the next implementation boundary are recorded in `docs/implementation-status.md`.
+## API and database
 
-TypeScript runs directly on Windows. Compact compilation is routed through Ubuntu 24.04 on WSL and does not use Docker.
+Use a dedicated PostgreSQL 16 development database. Inject runtime variables
+through your shell or secret manager; `.env.example` lists the relevant names.
+The processes do not automatically load an environment file.
 
-```powershell
-npm install
-npm run midnight:compile
-npm run midnight:typecheck
+Set `DATABASE_URL` for Prisma and `LUNARVEIL_DATABASE_URL` for the application
+to the same database. Apply the checked-in migrations:
+
+```sh
+npm exec -- prisma migrate deploy --schema packages/db/prisma/schema.prisma
+npm --workspace @lunarveil/api-server run start
+```
+
+The API requires `LUNARVEIL_TRADER_TAG_KEY` (at least 32 random bytes as hex).
+The optional `LUNARVEIL_DEV_MATCHER_KEY_SEED` is a 32-byte hex seed shared
+between development processes. Keep it stable while existing envelopes need
+decryption. Production key management is not implemented.
+
+There is no automatic market seed or chain deployment. A blank database
+returns an empty catalog. Configure actual deployment data deliberately.
+
+## Verification
+
+`npm test` runs workspace tests, including deterministic matching properties,
+privacy boundaries, authentication and failure cases. Database and live-chain
+tests are opt-in and skip without explicit configuration.
+
+On Windows with Ubuntu 24.04 WSL and PostgreSQL 16 binaries installed:
+
+```sh
+npm --workspace @lunarveil/db run test:integration:wsl
+```
+
+This creates and removes an isolated disposable database. It does not test
+against a production database.
+
+Midnight experiments have a separate lockfile and compiler requirements.
+Use the versions in `config/midnight-compatibility.yaml`; do not install
+unqualified latest versions.
+
+```sh
+npm --prefix spikes/midnight-smoke ci
 npm run midnight:m2
-npm run midnight:proof-server:install
+npm run midnight:m3
 ```
 
-Start the local proof server in one PowerShell window, then generate the real M2 fixture proofs in another:
+Compact compilation uses the pinned compiler through WSL on Windows.
+Real proofs require a controlled proof server. Chain commands require explicit
+network configuration and funded test-wallet secrets. Never send private
+witnesses to an untrusted prover.
 
-```powershell
-npm run midnight:proof-server:start
-# second window
-npm run midnight:m2-proofs
-```
+## Implementation boundaries
 
-This rootless WSL workflow downloads the pinned official `midnightntwrk/proof-server:8.1.0` image layer, verifies its immutable digest, and executes its binary directly. It does not install or start Docker. Stop the foreground server with `Ctrl+C`. The official Midnight documentation describes Docker as the supported distribution path, so this direct extraction is a controlled local-development deviation recorded in [ADR-0005](adr/ADR-0005-rootless-wsl-proof-server.md), not a production deployment recommendation.
+- Encrypted intake, wallet authentication, admission adapters and deterministic
+  matching have automated tests.
+- Closed-epoch preparation remains an unscheduled service. It requires frozen
+  root evidence; a database-only close cannot safely start matching.
+- The deployed proof design is bounded to four orders, LIMIT/GFE, partial
+  fills and no minimum fill, reference-price tie-break or cancellation support.
+  Broader matching-core capabilities are not claims about that circuit.
+- The complete chain-close/proof/allocation/firm-up/settlement orchestration
+  and production KMS are incomplete.
+- A canonical off-chain solution fingerprint is not a Compact solution
+  commitment. Proof-pending database records are workflow state, not chain proof.
+- Connector settlement is not atomically coupled to the exchange contract.
 
-The old disposable local-chain commands remain available only when Docker is deliberately re-enabled. They are not required for unit tests, canonical commitment vectors, Compact compilation, generated circuit state-transition checks, or local M2 proof generation.
+## Deployment previews
 
-Actual Preprod transactions still require funded wallets plus public node/indexer access. Public node access alone does not generate proofs; the controlled WSL process now supplies proofs locally, so Lunarveil does not send private witnesses to an untrusted public prover.
+The repository includes two deployment entry points:
 
-The typed two-wallet M2 checkpoint is ready for Preview. Inject two distinct test-only seeds and the encrypted private-state password through the runtime environment or a secret manager; never place them in repository files:
+- `vercel.json` builds the web app through Vinext's Nitro Vercel preset. In
+  Vercel, keep the project root at the repository root, use Node 22, and set
+  `LUNARVEIL_API_BASE_URL` to the HTTPS Render API URL.
+- `render.yaml` declares a Node-rendered web preview and an API preview. The
+  API requires `LUNARVEIL_DATABASE_URL`, a stable hexadecimal
+  `LUNARVEIL_TRADER_TAG_KEY`, and the final Vercel/Render web URL in
+  `LUNARVEIL_ALLOWED_ORIGINS`. These secret values are deliberately marked
+  manual in the Blueprint.
 
-```powershell
-npm run midnight:m2-chain:typecheck
-npm run midnight:m2-chain -- --network preview
-```
+The Render API preview uses development-only key handling and reports missing
+chain/prover/KMS dependencies as unavailable. It is useful for UI/API review;
+it is not a production exchange deployment.
 
-The command prints faucet addresses when either wallet is unfunded, records only named public deployment metadata, and can be rerun after funding. See [ADR-0006](adr/ADR-0006-m2-two-wallet-chain-checkpoint.md) for its idempotency and privacy boundary.
+## Repository hygiene
 
-The M3 N=4 successor has a separate, one-wallet deployment checkpoint. It does
-not alter the deployed M2 contract, does not submit an order, and remains
-undeployed until this explicit operator action succeeds. First compile and
-check the generated contract interface plus public-metadata privacy boundary:
-
-```powershell
-npm run midnight:m3-chain:typecheck
-npm --prefix spikes/midnight-smoke run check:m3-public-state
-```
-
-With the controlled proof server running, inject a funded test-only deployer
-seed as `LUNARVEIL_M3_DEPLOYER_SEED` and `PRIVATE_STATE_PASSWORD` through the
-current shell or secret manager, then deliberately choose the network:
-
-```powershell
-npm run midnight:m3-chain -- --network preview
-```
-
-The checkpoint is idempotent only after its public deployment record exists.
-An uncertain deployment outcome stops without retry; reconcile the public chain
-before running it again. See [ADR-0010](adr/ADR-0010-frontend-freeze-backend-reopen-m3.md).
-
-For the historical M0 local-chain reproduction only:
-
-```powershell
-Set-Location spikes\midnight-smoke
-npm run setup
-npm run test:e2e
-```
-
-Before wallet commands, inject `MIDNIGHT_WALLET_SEED` and
-`PRIVATE_STATE_PASSWORD` through the current shell or a secret manager. Values
-must never be placed in the repository; the smoke tooling does not persist
-wallet seeds or serialized private wallet state.
-
-When deliberately enabled, the Docker services use loopback-only ports `127.0.0.1:9944` (node), `127.0.0.1:8088` (indexer), and `127.0.0.1:6300` (proof server). They are historical local-development infrastructure, not production services.
+This review snapshot excludes planning documents, agent files, wallet stores,
+local network state, compiled contract output, build caches and original GLB
+source duplicates. Optimized models used by the frontend remain included.
+Tests, migrations and lockfiles are retained for reproducibility.

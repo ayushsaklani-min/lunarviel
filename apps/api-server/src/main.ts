@@ -57,8 +57,7 @@ async function main(): Promise<void> {
   process.stdout.write(`${JSON.stringify({ event: 'server.started', address: started.address })}\n`);
 }
 
-main().catch((error: unknown) => {
-  const code = error instanceof Error ? error.message : 'STARTUP_FAILED';
-  process.stderr.write(`${JSON.stringify({ event: 'server.startup_failed', code })}\n`);
+main().catch(() => {
+  process.stderr.write(`${JSON.stringify({ event: 'server.startup_failed', code: 'STARTUP_FAILED' })}\n`);
   process.exit(1);
 });

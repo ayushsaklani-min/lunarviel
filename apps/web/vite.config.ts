@@ -1,14 +1,21 @@
 import { sites } from "@openai/sites-vite-plugin";
+import { existsSync, readFileSync } from "node:fs";
 import wasm from "vite-plugin-wasm";
 import vinext from "vinext";
+import { nitro } from "nitro/vite";
 import { defineConfig } from "vite";
-import hostingConfig from "./.openai/hosting.json";
+// Hosting metadata is optional and local; a clean clone must build without it.
+const hostingPath = new URL("./.openai/hosting.json", import.meta.url);
+const hostingConfig: { d1?: string; r2?: string } = existsSync(hostingPath)
+  ? JSON.parse(readFileSync(hostingPath, "utf8"))
+  : {};
 
 const SITE_CREATOR_PLACEHOLDER_DATABASE_ID =
   "00000000-0000-4000-8000-000000000000";
 
 const { d1, r2 } = hostingConfig;
 const isCodexSeatbeltSandbox = process.env.CODEX_SANDBOX === "seatbelt";
+const deploymentPreset = process.env.NITRO_PRESET;
 
 const localBindingConfig = {
   main: "./worker/index.ts",
@@ -48,11 +55,13 @@ export default defineConfig(async () => {
       // as WebAssembly. Without this the client bundle cannot load it at all.
       wasm(),
       vinext(),
-      sites(),
-      cloudflare({
-        viteEnvironment: { name: "rsc", childEnvironments: ["ssr"] },
-        config: localBindingConfig,
-      }),
+      ...(existsSync(hostingPath) ? [sites()] : []),
+      ...(deploymentPreset === undefined
+        ? [cloudflare({
+          viteEnvironment: { name: "rsc", childEnvironments: ["ssr"] },
+          config: localBindingConfig,
+        })]
+        : [nitro()]),
     ],
   };
 });

@@ -30,3 +30,23 @@ midnight-level-db/
 Thumbs.db
 apps/web/.vinext/
 apps/web/.openai/
+
+# Local planning, agent state, credentials, and duplicate source assets
+docs/
+adr/
+AGENTS.md
+CODEX_MASTER_PROMPT.md
+IMPLEMENTATION_START_HERE.md
+.agents/
+.codex/
+.superpowers/
+3dmodel/
+*.pem
+*.key
+*.p12
+*.pfx
+*.dpapi.json
+*.sqlite*
+.node_modules-incomplete/
+apps/web/.output/
+apps/web/.vercel/

@@ -12,6 +12,8 @@ describe('parseLunarveilRuntimeConfigV1', () => {
 
   it('validates network settings and origins', () => {
     expect(parseLunarveilRuntimeConfigV1({ LUNARVEIL_API_PORT: '4400', LUNARVEIL_API_HOST: '0.0.0.0', LUNARVEIL_ALLOWED_ORIGINS: 'https://app.example,https://admin.example', LUNARVEIL_TRUST_PROXY: 'true' })).toMatchObject({ port: 4400, host: '0.0.0.0', trustProxy: true });
+    expect(parseLunarveilRuntimeConfigV1({ PORT: '4401' })).toMatchObject({ port: 4401 });
+    expect(parseLunarveilRuntimeConfigV1({ LUNARVEIL_API_PORT: '4400', PORT: '4401' })).toMatchObject({ port: 4400 });
     expect(() => parseLunarveilRuntimeConfigV1({ LUNARVEIL_API_PORT: '0' })).toThrowError(new LunarveilRuntimeConfigError('INVALID_PORT'));
     expect(() => parseLunarveilRuntimeConfigV1({ LUNARVEIL_ALLOWED_ORIGINS: '*' })).toThrowError(new LunarveilRuntimeConfigError('INVALID_ORIGINS'));
   });
