@@ -37,6 +37,7 @@ import {
   DevelopmentTraderBindingVerifierV1,
   DevelopmentWalletSignatureVerifierV1,
 } from './developmentAdapters.js';
+import { createRuntimeDependencyProbesV1, type RuntimeDependencyProbesV1 } from './runtimeDependencyProbes.js';
 
 /**
  * Either development key store. Both publish public metadata and resolve a
@@ -64,25 +65,31 @@ const RATE_LIMIT_PER_MINUTE = 120;
 /**
  * Probes each dependency for real rather than asserting health.
  *
- * CHAIN_SOURCE, PROVER and KMS have no adapter yet, so they are reported
- * UNAVAILABLE. Readiness therefore stays false, which is correct: the service
- * can accept and store an encrypted order, but it cannot yet reconcile chain
- * admission, prove, or hold keys safely. Do not report these READY to make a
- * probe pass.
+ * Chain and prover status are observed through bounded public health checks.
+ * KMS remains unavailable until the matcher can actually resolve its X25519
+ * private key through an HSM/KMS boundary; an endpoint ping would be a lie.
  */
-async function probeStatus(pool: Pool, matcherReady: () => boolean): Promise<SanitizedSystemStatusV1> {
-  let database: SanitizedDependencyState = 'UNAVAILABLE';
-  try {
-    await pool.query('SELECT 1');
-    database = 'READY';
-  } catch {
-    database = 'UNAVAILABLE';
-  }
+async function probeStatus(
+  pool: Pool,
+  matcherReady: () => boolean,
+  runtime: RuntimeDependencyProbesV1,
+): Promise<SanitizedSystemStatusV1> {
+  const databaseProbe = async (): Promise<SanitizedDependencyState> => {
+    try {
+      await pool.query('SELECT 1');
+      return 'READY';
+    } catch {
+      return 'UNAVAILABLE';
+    }
+  };
+  const [database, chainSource, prover] = await Promise.all([
+    databaseProbe(), runtime.chainSource(), runtime.prover(),
+  ]);
   const components = [
     { name: 'DATABASE' as const, state: database },
     { name: 'MATCHER' as const, state: matcherReady() ? ('READY' as const) : ('UNAVAILABLE' as const) },
-    { name: 'CHAIN_SOURCE' as const, state: 'UNAVAILABLE' as const },
-    { name: 'PROVER' as const, state: 'UNAVAILABLE' as const },
+    { name: 'CHAIN_SOURCE' as const, state: chainSource },
+    { name: 'PROVER' as const, state: prover },
     { name: 'KMS' as const, state: 'UNAVAILABLE' as const },
   ];
   const state: SanitizedDependencyState = components.every(component => component.state === 'READY')
@@ -120,11 +127,19 @@ export async function composeLunarveilApiV1(input: {
    * `privateKeyRef` through a KMS instead.
    */
   readonly matcherKeySeedHex?: string;
+  /** Official Midnight indexer endpoint used only for a public tip probe. */
+  readonly indexerUrl?: string;
+  /** Controlled proof-server endpoint used only for its non-sensitive health probes. */
+  readonly proofServerUrl?: string;
 }): Promise<ComposedLunarveilApiV1> {
   const nowMs = input.nowMs ?? (() => BigInt(Date.now()));
   const pool = new Pool({ connectionString: input.databaseUrl, max: input.poolMax ?? 8 });
   try {
     const serializable = nodePostgresSerializablePool(pool);
+    const runtimeDependencyProbes = createRuntimeDependencyProbesV1({
+      ...(input.indexerUrl === undefined ? {} : { indexerUrl: input.indexerUrl }),
+      ...(input.proofServerUrl === undefined ? {} : { proofServerUrl: input.proofServerUrl }),
+    });
     const developmentSecret = new Uint8Array(randomBytes(32));
     // A per-process key cannot be matched against: the matcher runs in its own
     // process and would generate a different one, so no order sealed here
@@ -202,7 +217,7 @@ export async function composeLunarveilApiV1(input: {
         ),
       }),
       markets: new PostgresPublicMarketCatalogRepository(serializable),
-      systemStatus: { read: () => probeStatus(pool, () => matcherKeyUsable(matcherKeys, nowMs())) },
+      systemStatus: { read: () => probeStatus(pool, () => matcherKeyUsable(matcherKeys, nowMs()), runtimeDependencyProbes) },
       rateLimiter: new PostgresRateLimitWindowRepository(serializable, RATE_LIMIT_PER_MINUTE),
       logger,
       ...(input.config.allowedOrigins.length > 0 ? { allowedOrigins: input.config.allowedOrigins } : {}),

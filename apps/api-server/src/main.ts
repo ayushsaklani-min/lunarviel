@@ -34,6 +34,8 @@ async function main(): Promise<void> {
     databaseUrl,
     traderTagKey,
     ...(matcherKeySeedHex === undefined ? {} : { matcherKeySeedHex }),
+    ...(process.env.LUNARVEIL_INDEXER_URL === undefined ? {} : { indexerUrl: process.env.LUNARVEIL_INDEXER_URL }),
+    ...(process.env.LUNARVEIL_PROVER_URL === undefined ? {} : { proofServerUrl: process.env.LUNARVEIL_PROVER_URL }),
   });
   let started: Awaited<ReturnType<typeof startLunarveilApiV1>> | undefined;
   try {
