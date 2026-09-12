@@ -61,7 +61,11 @@ export default defineConfig(async () => {
           viteEnvironment: { name: "rsc", childEnvironments: ["ssr"] },
           config: localBindingConfig,
         })]
-        : [nitro()]),
+        // Vercel reads its Build Output API directory from the repository root,
+        // whereas this Vite workspace is nested under apps/web.
+        : [nitro(deploymentPreset === "vercel"
+          ? { output: { dir: "../../.vercel/output" } }
+          : {})]),
     ],
   };
 });
