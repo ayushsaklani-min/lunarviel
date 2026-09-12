@@ -26,6 +26,10 @@ services:
         value: development
       - key: LUNARVEIL_API_HOST
         value: 0.0.0.0
+      # Public read-only Midnight Preview indexer. The API probe queries only
+      # the chain tip; it never sends orders, witnesses, or wallet material.
+      - key: LUNARVEIL_INDEXER_URL
+        value: https://indexer.preview.midnight.network/api/v4/graphql
       - key: DATABASE_URL
         sync: false
       - key: LUNARVEIL_DATABASE_URL
