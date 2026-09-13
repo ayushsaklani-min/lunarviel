@@ -1,4 +1,19 @@
 services:
+  # Development-only controlled prover. The image is pinned to the Midnight
+  # compatibility-matrix version; it exposes Render-managed HTTPS health
+  # endpoints used by the API readiness probe.
+  - type: web
+    name: lunarveil-proof-server
+    runtime: image
+    plan: free
+    region: oregon
+    image:
+      url: docker.io/midnightntwrk/proof-server:8.1.0
+    healthCheckPath: /health
+    envVars:
+      - key: MIDNIGHT_PROOF_SERVER_PORT
+        value: 10000
+
   - type: web
     name: lunarveil-web-preview
     runtime: node
@@ -30,6 +45,8 @@ services:
       # the chain tip; it never sends orders, witnesses, or wallet material.
       - key: LUNARVEIL_INDEXER_URL
         value: https://indexer.preview.midnight.network/api/v4/graphql
+      - key: LUNARVEIL_PROVER_URL
+        value: https://lunarveil-proof-server.onrender.com
       - key: DATABASE_URL
         sync: false
       - key: LUNARVEIL_DATABASE_URL
