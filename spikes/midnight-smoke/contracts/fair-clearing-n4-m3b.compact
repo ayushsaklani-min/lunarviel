@@ -1,0 +1,553 @@
+pragma language_version >= 0.23;
+
+import CompactStandardLibrary;
+
+export struct OrderIntentV1 {
+  version: Uint<16>;
+  marketId: Bytes<32>;
+  epochSequence: Uint<64>;
+  ownerPublicKey: Bytes<32>;
+  side: Boolean;
+  orderType: Uint<8>;
+  quantityLots: Uint<128>;
+  limitPriceTicks: Uint<128>;
+  minFillLots: Uint<128>;
+  tif: Uint<8>;
+  allowPartial: Boolean;
+  nonce: Bytes<32>;
+  createdAtMs: Uint<64>;
+  expiresAtMs: Uint<64>;
+}
+
+export struct FairSlotV1 {
+  isDummy: Boolean;
+  order: OrderIntentV1;
+  blinding: Bytes<32>;
+  path: MerkleTreePath<2, Bytes<32>>;
+}
+
+export struct FairSolutionV1 {
+  version: Uint<16>;
+  marketId: Bytes<32>;
+  epochSequence: Uint<64>;
+  ruleVersionHash: Bytes<32>;
+  configHash: Bytes<32>;
+  inputRoot: Field;
+  clearingPriceTicks: Uint<64>;
+  totalVolumeLots: Uint<66>;
+  fills: Vector<4, Uint<64>>;
+}
+
+export struct ProRataWitnessV1 {
+  bases: Vector<4, Uint<64>>;
+  remainders: Vector<4, Uint<66>>;
+}
+
+struct PriceScore {
+  valid: Boolean;
+  price: Uint<64>;
+  volume: Uint<66>;
+  imbalance: Uint<66>;
+}
+
+struct ByteOrderState {
+  decided: Boolean;
+  leftLess: Boolean;
+}
+
+export ledger orderCommitments: HistoricMerkleTree<2, Bytes<32>>;
+ledger currentOrderCommitments: MerkleTree<2, Bytes<32>>;
+export ledger nextOrderIndex: Counter;
+export ledger currentEpochSequence: Uint<64>;
+export ledger marketId: Bytes<32>;
+export ledger ruleVersionHash: Bytes<32>;
+export ledger configHash: Bytes<32>;
+// M3b freezes the epoch boundary at construction. It is deliberately sealed:
+// no public circuit may shorten or extend an already configured auction.
+export sealed ledger epochCloseAt: Uint<64>;
+export ledger epochClosed: Boolean;
+export ledger closedStartIndex: Uint<64>;
+export ledger closedEndIndexExclusive: Uint<64>;
+export ledger closedOrderCount: Uint<64>;
+export ledger closedRoot: MerkleTreeDigest;
+export ledger closedByRequestKey: Bytes<32>;
+ledger admissionRequestKeys: Set<Bytes<32>>;
+export ledger consumedOrderNullifiers: Set<Bytes<32>>;
+ledger cancellationRequestKeys: Set<Bytes<32>>;
+export ledger fairSolutionSubmitted: Boolean;
+export ledger fairSolutionCommitment: Bytes<32>;
+ledger fairSolutionRequestKeys: Set<Bytes<32>>;
+
+constructor(
+  initialEpochSequence: Uint<64>,
+  initialMarketId: Bytes<32>,
+  initialRuleVersionHash: Bytes<32>,
+  initialConfigHash: Bytes<32>,
+  initialEpochCloseAt: Uint<64>,
+) {
+  assert(initialEpochCloseAt > 0, "epoch close time must be positive");
+  currentEpochSequence = disclose(initialEpochSequence);
+  marketId = disclose(initialMarketId);
+  ruleVersionHash = disclose(initialRuleVersionHash);
+  configHash = disclose(initialConfigHash);
+  epochCloseAt = disclose(initialEpochCloseAt);
+}
+
+export circuit deriveOrderCommitment(
+  order: OrderIntentV1,
+  blinding: Bytes<32>,
+): Bytes<32> {
+  return persistentCommit<[Bytes<32>, OrderIntentV1]>(
+    [pad(32, "LUNARVEIL_ORDER_V1"), order],
+    blinding,
+  );
+}
+
+export circuit deriveOwnerAuthorization(ownerSecret: Bytes<32>): Bytes<32> {
+  return persistentHash<[Bytes<32>, Bytes<32>]>(
+    [pad(32, "LUNARVEIL_OWNER_V1"), ownerSecret]
+  );
+}
+
+export circuit deriveOrderNullifier(
+  commitment: Bytes<32>,
+  ownerSecret: Bytes<32>,
+): Bytes<32> {
+  return persistentCommit<[Bytes<32>, Bytes<32>]>(
+    [pad(32, "LUNARVEIL_NULLIFIER_V1"), commitment],
+    ownerSecret,
+  );
+}
+
+export circuit deriveFairSolutionCommitment(
+  solution: FairSolutionV1,
+  blinding: Bytes<32>,
+): Bytes<32> {
+  return persistentCommit<[Bytes<32>, FairSolutionV1]>(
+    [pad(32, "LUNARVEIL_FAIR_SOLUTION_V1"), solution],
+    blinding,
+  );
+}
+
+export circuit submitOrderCommitment(
+  epochSequence: Uint<64>,
+  commitment: Bytes<32>,
+  requestKey: Bytes<32>,
+): Uint<64> {
+  assert(epochSequence == currentEpochSequence, "wrong epoch sequence");
+  assert(!epochClosed, "epoch is closed");
+  assert(blockTimeLt(epochCloseAt), "epoch admission time has ended");
+  assert(!orderCommitments.isFull(), "order tree is full");
+  assert(!admissionRequestKeys.member(disclose(requestKey)), "admission request already used");
+
+  const index = nextOrderIndex.read();
+  orderCommitments.insert(disclose(commitment));
+  currentOrderCommitments.insert(disclose(commitment));
+  admissionRequestKeys.insert(disclose(requestKey));
+  nextOrderIndex.increment(1);
+  return index;
+}
+
+export circuit closeEpoch(
+  epochSequence: Uint<64>,
+  proposedCurrentRoot: MerkleTreeDigest,
+  requestKey: Bytes<32>,
+): [] {
+  assert(epochSequence == currentEpochSequence, "wrong epoch sequence");
+  assert(!epochClosed, "epoch is already closed");
+  assert(blockTimeGte(epochCloseAt), "epoch close time has not been reached");
+  assert(
+    currentOrderCommitments.checkRoot(disclose(proposedCurrentRoot)),
+    "root is not the current order-tree root"
+  );
+  assert(
+    orderCommitments.checkRoot(disclose(proposedCurrentRoot)),
+    "root is not retained by the historic order tree"
+  );
+
+  const endIndex = nextOrderIndex.read();
+  closedStartIndex = 0;
+  closedEndIndexExclusive = endIndex;
+  closedOrderCount = endIndex;
+  closedRoot = disclose(proposedCurrentRoot);
+  closedByRequestKey = disclose(requestKey);
+  epochClosed = true;
+}
+
+export circuit cancelOrder(
+  order: OrderIntentV1,
+  blinding: Bytes<32>,
+  path: MerkleTreePath<2, Bytes<32>>,
+  leafIndex: Uint<64>,
+  ownerSecret: Bytes<32>,
+  requestKey: Bytes<32>,
+): Bytes<32> {
+  assert(epochClosed, "epoch is not closed");
+  assert(order.epochSequence == currentEpochSequence, "wrong epoch sequence");
+  const publicLeafIndex = disclose(leafIndex);
+  assert(
+    publicLeafIndex >= closedStartIndex && publicLeafIndex < closedEndIndexExclusive,
+    "leaf index is outside the frozen epoch range"
+  );
+
+  const commitment = deriveOrderCommitment(order, blinding);
+  assert(path.leaf == commitment, "opening does not match path leaf");
+  const pathRoot = merkleTreePathRoot<2, Bytes<32>>(path);
+  assert(pathRoot.field == closedRoot.field, "path does not match frozen root");
+  assert(
+    (publicLeafIndex == 0 && path.path[0].goes_left && path.path[1].goes_left) ||
+    (publicLeafIndex == 1 && !path.path[0].goes_left && path.path[1].goes_left) ||
+    (publicLeafIndex == 2 && path.path[0].goes_left && !path.path[1].goes_left) ||
+    (publicLeafIndex == 3 && !path.path[0].goes_left && !path.path[1].goes_left),
+    "Merkle path directions do not match leaf index"
+  );
+  assert(
+    deriveOwnerAuthorization(ownerSecret) == order.ownerPublicKey,
+    "owner authorization failed"
+  );
+
+  const nullifier = deriveOrderNullifier(commitment, ownerSecret);
+  assert(!consumedOrderNullifiers.member(nullifier), "order nullifier is already consumed");
+  assert(
+    !cancellationRequestKeys.member(disclose(requestKey)),
+    "cancellation request already used"
+  );
+  consumedOrderNullifiers.insert(nullifier);
+  cancellationRequestKeys.insert(disclose(requestKey));
+  return nullifier;
+}
+
+circuit slotCommitment(slot: FairSlotV1): Bytes<32> {
+  return slot.isDummy ? default<Bytes<32>> : deriveOrderCommitment(slot.order, slot.blinding);
+}
+
+circuit validateSlot(
+  slot: FairSlotV1,
+  shouldBeReal: Boolean,
+  firstDirectionLeft: Boolean,
+  secondDirectionLeft: Boolean,
+): [] {
+  assert(slot.isDummy != shouldBeReal, "slot padding does not match frozen count");
+  if (shouldBeReal) {
+    assert(slot.order.version == 1, "unsupported order version");
+    assert(slot.order.marketId == marketId, "order market mismatch");
+    assert(slot.order.epochSequence == currentEpochSequence, "order epoch mismatch");
+    assert(slot.order.orderType == 0, "M3a supports LIMIT orders only");
+    assert(slot.order.quantityLots > 0, "quantity must be positive");
+    assert(slot.order.limitPriceTicks > 0, "limit price must be positive");
+    assert(slot.order.quantityLots == (slot.order.quantityLots as Uint<64>), "quantity exceeds M3a bound");
+    assert(slot.order.limitPriceTicks == (slot.order.limitPriceTicks as Uint<64>), "price exceeds M3a bound");
+    assert(slot.order.minFillLots == 0, "M3a does not yet support minimum fill");
+    assert(slot.order.tif == 0, "M3a supports GFE orders only");
+    assert(slot.order.allowPartial, "M3a requires partial fills");
+
+    const commitment = deriveOrderCommitment(slot.order, slot.blinding);
+    assert(slot.path.leaf == commitment, "opening does not match path leaf");
+    assert(
+      merkleTreePathRoot<2, Bytes<32>>(slot.path).field == closedRoot.field,
+      "slot path does not match frozen root"
+    );
+    assert(
+      slot.path.path[0].goes_left == firstDirectionLeft &&
+      slot.path.path[1].goes_left == secondDirectionLeft,
+      "slot path directions do not match fixed index"
+    );
+  } else {
+    assert(slot.order == default<OrderIntentV1>, "dummy order must be canonical");
+    assert(slot.blinding == default<Bytes<32>>, "dummy blinding must be canonical");
+    assert(slot.path == default<MerkleTreePath<2, Bytes<32>>>, "dummy path must be canonical");
+  }
+}
+
+circuit eligibleQuantity(
+  slot: FairSlotV1,
+  real: Boolean,
+  candidatePrice: Uint<64>,
+  sellSide: Boolean,
+): Uint<64> {
+  const price = slot.order.limitPriceTicks as Uint<64>;
+  const eligible = real && slot.order.side == sellSide &&
+    (sellSide ? price <= candidatePrice : price >= candidatePrice);
+  return eligible ? slot.order.quantityLots as Uint<64> : 0 as Uint<64>;
+}
+
+circuit scorePrice(
+  slots: Vector<4, FairSlotV1>,
+  real: Vector<4, Boolean>,
+  candidatePrice: Uint<64>,
+  valid: Boolean,
+): PriceScore {
+  const buy = eligibleQuantity(slots[0], real[0], candidatePrice, false) +
+    eligibleQuantity(slots[1], real[1], candidatePrice, false) +
+    eligibleQuantity(slots[2], real[2], candidatePrice, false) +
+    eligibleQuantity(slots[3], real[3], candidatePrice, false);
+  const sell = eligibleQuantity(slots[0], real[0], candidatePrice, true) +
+    eligibleQuantity(slots[1], real[1], candidatePrice, true) +
+    eligibleQuantity(slots[2], real[2], candidatePrice, true) +
+    eligibleQuantity(slots[3], real[3], candidatePrice, true);
+  return PriceScore {
+    valid,
+    price: candidatePrice,
+    volume: buy < sell ? buy : sell,
+    imbalance: buy < sell ? sell - buy : buy - sell,
+  };
+}
+
+circuit betterScore(left: PriceScore, right: PriceScore): Boolean {
+  if (!left.valid) return false;
+  if (!right.valid) return true;
+  if (left.volume != right.volume) return left.volume > right.volume;
+  if (left.imbalance != right.imbalance) return left.imbalance < right.imbalance;
+  return left.price < right.price;
+}
+
+circuit chooseBestScore(
+  slots: Vector<4, FairSlotV1>,
+  real: Vector<4, Boolean>,
+): PriceScore {
+  const score0 = scorePrice(slots, real, slots[0].order.limitPriceTicks as Uint<64>, real[0]);
+  const score1 = scorePrice(slots, real, slots[1].order.limitPriceTicks as Uint<64>, real[1]);
+  const score2 = scorePrice(slots, real, slots[2].order.limitPriceTicks as Uint<64>, real[2]);
+  const score3 = scorePrice(slots, real, slots[3].order.limitPriceTicks as Uint<64>, real[3]);
+  const best01 = betterScore(score1, score0) ? score1 : score0;
+  const best012 = betterScore(score2, best01) ? score2 : best01;
+  return betterScore(score3, best012) ? score3 : best012;
+}
+
+circuit commitmentLess(left: Bytes<32>, right: Bytes<32>): Boolean {
+  const result = fold(
+    (state: ByteOrderState, leftByte: Uint<8>, rightByte: Uint<8>): ByteOrderState => {
+      const differs = leftByte != rightByte;
+      return ByteOrderState {
+        decided: state.decided || differs,
+        leftLess: state.decided ? state.leftLess : (differs && leftByte < rightByte),
+      };
+    },
+    ByteOrderState { decided: false, leftLess: false },
+    left as Vector<32, Uint<8>>,
+    right as Vector<32, Uint<8>>,
+  );
+  return result.leftLess;
+}
+
+circuit sameLevelQuantity(
+  target: FairSlotV1,
+  other: FairSlotV1,
+  targetReal: Boolean,
+  otherReal: Boolean,
+): Uint<64> {
+  return targetReal && otherReal && target.order.side == other.order.side &&
+    target.order.limitPriceTicks == other.order.limitPriceTicks
+    ? other.order.quantityLots as Uint<64>
+    : 0 as Uint<64>;
+}
+
+circuit betterQuantity(
+  target: FairSlotV1,
+  other: FairSlotV1,
+  targetReal: Boolean,
+  otherReal: Boolean,
+  clearingPrice: Uint<64>,
+): Uint<64> {
+  const targetPrice = target.order.limitPriceTicks as Uint<64>;
+  const otherPrice = other.order.limitPriceTicks as Uint<64>;
+  const targetEligible = targetReal &&
+    (target.order.side ? targetPrice <= clearingPrice : targetPrice >= clearingPrice);
+  const otherEligible = otherReal && target.order.side == other.order.side &&
+    (other.order.side ? otherPrice <= clearingPrice : otherPrice >= clearingPrice);
+  const strictlyBetter = target.order.side ? otherPrice < targetPrice : otherPrice > targetPrice;
+  return targetEligible && otherEligible && strictlyBetter
+    ? other.order.quantityLots as Uint<64>
+    : 0 as Uint<64>;
+}
+
+circuit baseAtLevel(
+  target: FairSlotV1,
+  other: FairSlotV1,
+  targetReal: Boolean,
+  otherReal: Boolean,
+  otherBase: Uint<64>,
+): Uint<64> {
+  return targetReal && otherReal && target.order.side == other.order.side &&
+    target.order.limitPriceTicks == other.order.limitPriceTicks ? otherBase : 0 as Uint<64>;
+}
+
+circuit remainderRankPart(
+  target: FairSlotV1,
+  other: FairSlotV1,
+  targetCommitment: Bytes<32>,
+  otherCommitment: Bytes<32>,
+  targetReal: Boolean,
+  otherReal: Boolean,
+  targetRemainder: Uint<66>,
+  otherRemainder: Uint<66>,
+): Uint<8> {
+  const sameLevel = targetReal && otherReal && target.order.side == other.order.side &&
+    target.order.limitPriceTicks == other.order.limitPriceTicks;
+  const ahead = otherRemainder > targetRemainder ||
+    (otherRemainder == targetRemainder && commitmentLess(otherCommitment, targetCommitment));
+  return sameLevel && ahead ? 1 as Uint<8> : 0 as Uint<8>;
+}
+
+circuit verifyAllocation(
+  target: FairSlotV1,
+  slots: Vector<4, FairSlotV1>,
+  targetCommitment: Bytes<32>,
+  commitments: Vector<4, Bytes<32>>,
+  targetReal: Boolean,
+  real: Vector<4, Boolean>,
+  clearingPrice: Uint<64>,
+  volume: Uint<66>,
+  proposedFill: Uint<64>,
+  proposedBase: Uint<64>,
+  proposedRemainder: Uint<66>,
+  bases: Vector<4, Uint<64>>,
+  remainders: Vector<4, Uint<66>>,
+): [] {
+  const targetPrice = target.order.limitPriceTicks as Uint<64>;
+  const targetEligible = targetReal &&
+    (target.order.side ? targetPrice <= clearingPrice : targetPrice >= clearingPrice);
+  const quantity = target.order.quantityLots as Uint<64>;
+  const betterTotal = betterQuantity(target, slots[0], targetReal, real[0], clearingPrice) +
+    betterQuantity(target, slots[1], targetReal, real[1], clearingPrice) +
+    betterQuantity(target, slots[2], targetReal, real[2], clearingPrice) +
+    betterQuantity(target, slots[3], targetReal, real[3], clearingPrice);
+  const levelTotal = sameLevelQuantity(target, slots[0], targetReal, real[0]) +
+    sameLevelQuantity(target, slots[1], targetReal, real[1]) +
+    sameLevelQuantity(target, slots[2], targetReal, real[2]) +
+    sameLevelQuantity(target, slots[3], targetReal, real[3]);
+  const hasRemaining = targetEligible && betterTotal < volume;
+  const remaining = hasRemaining ? volume - betterTotal : 0 as Uint<66>;
+  const marginal = hasRemaining && remaining < levelTotal;
+
+  if (marginal) {
+    const numerator = remaining * quantity;
+    assert(
+      numerator == proposedBase * levelTotal + proposedRemainder,
+      "invalid pro-rata quotient or remainder"
+    );
+    assert(proposedRemainder < levelTotal, "pro-rata remainder is not reduced");
+
+    const levelBase = baseAtLevel(target, slots[0], targetReal, real[0], bases[0]) +
+      baseAtLevel(target, slots[1], targetReal, real[1], bases[1]) +
+      baseAtLevel(target, slots[2], targetReal, real[2], bases[2]) +
+      baseAtLevel(target, slots[3], targetReal, real[3], bases[3]);
+    const leftover = remaining - levelBase;
+    const rank = remainderRankPart(
+      target, slots[0], targetCommitment, commitments[0], targetReal, real[0],
+      proposedRemainder, remainders[0]
+    ) + remainderRankPart(
+      target, slots[1], targetCommitment, commitments[1], targetReal, real[1],
+      proposedRemainder, remainders[1]
+    ) + remainderRankPart(
+      target, slots[2], targetCommitment, commitments[2], targetReal, real[2],
+      proposedRemainder, remainders[2]
+    ) + remainderRankPart(
+      target, slots[3], targetCommitment, commitments[3], targetReal, real[3],
+      proposedRemainder, remainders[3]
+    );
+    const expectedFill = proposedBase + (rank < leftover ? 1 as Uint<64> : 0 as Uint<64>);
+    assert(proposedFill == expectedFill, "incorrect marginal pro-rata fill");
+  } else {
+    assert(proposedBase == 0, "non-marginal base witness must be zero");
+    assert(proposedRemainder == 0, "non-marginal remainder witness must be zero");
+    assert(
+      proposedFill == (hasRemaining ? quantity : 0 as Uint<64>),
+      "fill violates price priority or eligibility"
+    );
+  }
+}
+
+export circuit proveFairSolution(
+  slots: Vector<4, FairSlotV1>,
+  solution: FairSolutionV1,
+  proRata: ProRataWitnessV1,
+  solutionBlinding: Bytes<32>,
+  requestKey: Bytes<32>,
+): Bytes<32> {
+  assert(epochClosed, "epoch is not closed");
+  assert(!fairSolutionSubmitted, "fair solution is already submitted");
+  assert(consumedOrderNullifiers.isEmpty(), "M3a fails closed when cancellations exist");
+  assert(
+    !fairSolutionRequestKeys.member(disclose(requestKey)),
+    "fair solution request already used"
+  );
+  assert(closedStartIndex == 0, "M3a requires a zero-based frozen range");
+  assert(closedEndIndexExclusive == closedOrderCount, "frozen range/count mismatch");
+  assert(closedOrderCount <= 4, "frozen order count exceeds N=4");
+
+  const real = [
+    closedOrderCount > 0,
+    closedOrderCount > 1,
+    closedOrderCount > 2,
+    closedOrderCount > 3,
+  ];
+  validateSlot(slots[0], real[0], true, true);
+  validateSlot(slots[1], real[1], false, true);
+  validateSlot(slots[2], real[2], true, false);
+  validateSlot(slots[3], real[3], false, false);
+
+  const commitments = [
+    slotCommitment(slots[0]),
+    slotCommitment(slots[1]),
+    slotCommitment(slots[2]),
+    slotCommitment(slots[3]),
+  ];
+  assert(!real[0] || !real[1] || commitments[0] != commitments[1], "duplicate commitment");
+  assert(!real[0] || !real[2] || commitments[0] != commitments[2], "duplicate commitment");
+  assert(!real[0] || !real[3] || commitments[0] != commitments[3], "duplicate commitment");
+  assert(!real[1] || !real[2] || commitments[1] != commitments[2], "duplicate commitment");
+  assert(!real[1] || !real[3] || commitments[1] != commitments[3], "duplicate commitment");
+  assert(!real[2] || !real[3] || commitments[2] != commitments[3], "duplicate commitment");
+
+  const best = chooseBestScore(slots, real);
+  const expectedPrice = best.volume == 0 ? 0 as Uint<64> : best.price;
+  assert(solution.version == 1, "unsupported fair solution version");
+  assert(solution.marketId == marketId, "solution market mismatch");
+  assert(solution.epochSequence == currentEpochSequence, "solution epoch mismatch");
+  assert(solution.ruleVersionHash == ruleVersionHash, "solution rule mismatch");
+  assert(solution.configHash == configHash, "solution config mismatch");
+  assert(solution.inputRoot == closedRoot.field, "solution root mismatch");
+  assert(solution.clearingPriceTicks == expectedPrice, "clearing price is not optimal");
+  assert(solution.totalVolumeLots == best.volume, "solution volume is not optimal");
+
+  verifyAllocation(
+    slots[0], slots, commitments[0], commitments, real[0], real,
+    expectedPrice, best.volume, solution.fills[0], proRata.bases[0],
+    proRata.remainders[0], proRata.bases, proRata.remainders
+  );
+  verifyAllocation(
+    slots[1], slots, commitments[1], commitments, real[1], real,
+    expectedPrice, best.volume, solution.fills[1], proRata.bases[1],
+    proRata.remainders[1], proRata.bases, proRata.remainders
+  );
+  verifyAllocation(
+    slots[2], slots, commitments[2], commitments, real[2], real,
+    expectedPrice, best.volume, solution.fills[2], proRata.bases[2],
+    proRata.remainders[2], proRata.bases, proRata.remainders
+  );
+  verifyAllocation(
+    slots[3], slots, commitments[3], commitments, real[3], real,
+    expectedPrice, best.volume, solution.fills[3], proRata.bases[3],
+    proRata.remainders[3], proRata.bases, proRata.remainders
+  );
+
+  const buyFilled =
+    (!real[0] || slots[0].order.side ? 0 as Uint<64> : solution.fills[0]) +
+    (!real[1] || slots[1].order.side ? 0 as Uint<64> : solution.fills[1]) +
+    (!real[2] || slots[2].order.side ? 0 as Uint<64> : solution.fills[2]) +
+    (!real[3] || slots[3].order.side ? 0 as Uint<64> : solution.fills[3]);
+  const sellFilled =
+    (!real[0] || !slots[0].order.side ? 0 as Uint<64> : solution.fills[0]) +
+    (!real[1] || !slots[1].order.side ? 0 as Uint<64> : solution.fills[1]) +
+    (!real[2] || !slots[2].order.side ? 0 as Uint<64> : solution.fills[2]) +
+    (!real[3] || !slots[3].order.side ? 0 as Uint<64> : solution.fills[3]);
+  assert(buyFilled == best.volume, "buy fills do not conserve volume");
+  assert(sellFilled == best.volume, "sell fills do not conserve volume");
+
+  const commitment = deriveFairSolutionCommitment(solution, solutionBlinding);
+  fairSolutionCommitment = disclose(commitment);
+  fairSolutionRequestKeys.insert(disclose(requestKey));
+  fairSolutionSubmitted = true;
+  return commitment;
+}

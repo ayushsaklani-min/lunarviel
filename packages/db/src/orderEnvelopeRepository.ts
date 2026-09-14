@@ -107,6 +107,12 @@ const SELECT_BY_COMMITMENT = `
   WHERE "commitment" = $1
 `;
 
+const SELECT_PENDING_ENVELOPE_BY_ID = `
+  SELECT ${SELECT_ENVELOPE_COLUMNS}
+  FROM "OrderEnvelope"
+  WHERE "id" = $1 AND "state" = 'PENDING_CHAIN'
+`;
+
 function base64UrlToBuffer(value: string): Buffer {
   return Buffer.from(value, 'base64url');
 }
@@ -178,6 +184,29 @@ export class PostgresOrderEnvelopeRepository {
       }
     }
     throw new OrderEnvelopeRepositoryError('DATABASE_FAILURE');
+  }
+
+  /**
+   * Matcher-only pre-admission path. It intentionally returns ciphertext, not
+   * an opened order, and refuses rows no longer awaiting chain admission.
+   * Never expose this method through public/API repository projections.
+   */
+  async loadPendingEnvelope(orderId: string): Promise<OrderEnvelopeV1> {
+    if (!/^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u.test(orderId)) {
+      throw new OrderEnvelopeRepositoryError('DATABASE_CONFLICT');
+    }
+    const client = await this.pool.connect();
+    try {
+      const result = await client.query<OrderEnvelopeRow>(SELECT_PENDING_ENVELOPE_BY_ID, [orderId]);
+      const row = result.rows[0];
+      if (row === undefined) throw new OrderEnvelopeRepositoryError('DATABASE_CONFLICT');
+      return envelopeFromRow(row);
+    } catch (error) {
+      if (error instanceof OrderEnvelopeRepositoryError) throw error;
+      throw new OrderEnvelopeRepositoryError('DATABASE_FAILURE');
+    } finally {
+      client.release();
+    }
   }
 
   private async submitOnce(input: AuthenticatedOrderEnvelopeSubmissionV1): Promise<OrderEnvelopeRepositoryResult> {

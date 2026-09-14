@@ -1,12 +1,14 @@
 import type { EpochV1, MarketV1, MatcherKeyV1, OrderEnvelopeWireV1 } from "@lunarveil/api-client";
 import {
   commitOrderIntentV1,
+  deriveOwnerAuthorizationV1,
   generateCommitmentBlinding,
   sealOrderEnvelopeV1,
   type OrderIntentV1,
 } from "@lunarveil/crypto";
 
 import type { OrderDraftV1 } from "./orderDraft";
+import { ownerSecretForCancellationV1, retainOwnerSecretV1 } from "./ownerSecretVault";
 
 /**
  * Commitment and envelope sealing.
@@ -17,14 +19,6 @@ import type { OrderDraftV1 } from "./orderDraft";
  * only.
  */
 
-function hexToBytes(hex: string): Uint8Array {
-  const bytes = new Uint8Array(hex.length / 2);
-  for (let index = 0; index < bytes.length; index += 1) {
-    bytes[index] = Number.parseInt(hex.slice(index * 2, index * 2 + 2), 16);
-  }
-  return bytes;
-}
-
 async function sha256(input: string): Promise<Uint8Array> {
   const digest = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(input));
   return new Uint8Array(digest);
@@ -34,6 +28,11 @@ export interface SealedOrderV1 {
   readonly envelope: OrderEnvelopeWireV1;
   readonly commitment: string;
 }
+
+// Cancellation witnesses are browser-private. The vault persists only
+// AES-GCM ciphertext plus a non-extractable browser CryptoKey; raw secrets
+// never enter localStorage, the API, matcher, database, logs or chain state.
+export { ownerSecretForCancellationV1 } from "./ownerSecretVault";
 
 /**
  * Builds the commitment and the sealed envelope for one order.
@@ -52,8 +51,6 @@ export async function buildSealedOrderV1(input: {
   readonly epoch: EpochV1;
   readonly matcherKey: MatcherKeyV1;
   readonly traderTagHash: string;
-  /** Hex verifying key of the connected wallet: the order's owner. */
-  readonly verifyingKey: string;
   readonly clientRequestId: string;
   readonly nowMs: bigint;
   readonly lifetimeMs: bigint;
@@ -64,11 +61,14 @@ export async function buildSealedOrderV1(input: {
 
   const nonce = Uint8Array.from(crypto.getRandomValues(new Uint8Array(32)));
   const blinding = generateCommitmentBlinding();
+  const ownerSecret = Uint8Array.from(crypto.getRandomValues(new Uint8Array(32)));
+  const ownerAuthorization = deriveOwnerAuthorizationV1(ownerSecret);
+  let retainedOwnerSecret = false;
   const order: OrderIntentV1 = {
     version: 1,
     marketId: Uint8Array.from(await sha256(input.market.id)),
     epochSequence: BigInt(input.epoch.sequence),
-    ownerPublicKey: hexToBytes(input.verifyingKey),
+    ownerPublicKey: ownerAuthorization,
     side: input.draft.side,
     orderType: "LIMIT",
     quantityLots,
@@ -97,7 +97,7 @@ export async function buildSealedOrderV1(input: {
     // The matcher must reconstruct the compiler-locked commitment before it
     // considers an opening. This public key stays inside the encrypted order
     // payload; the database and chain never receive it in plaintext.
-    ownerPublicKey: input.verifyingKey.toLowerCase(),
+    ownerPublicKey: commitmentBytesToHex(order.ownerPublicKey),
     side: order.side,
     orderType: order.orderType,
     quantityLots: order.quantityLots.toString(),
@@ -131,9 +131,19 @@ export async function buildSealedOrderV1(input: {
       plaintext,
       nowMs: input.nowMs,
     });
+    await retainOwnerSecretV1(commitment, ownerSecret);
+    retainedOwnerSecret = true;
     return { envelope: envelope as unknown as OrderEnvelopeWireV1, commitment };
   } finally {
     plaintext.fill(0);
     blinding.fill(0);
+    ownerAuthorization.fill(0);
+    if (!retainedOwnerSecret) ownerSecret.fill(0);
   }
+}
+
+function commitmentBytesToHex(bytes: Uint8Array): string {
+  let value = "";
+  for (const byte of bytes) value += byte.toString(16).padStart(2, "0");
+  return value;
 }

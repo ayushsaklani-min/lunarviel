@@ -19,7 +19,7 @@ const candidate: OrderAdmissionSubmissionCandidateV1 = {
   commitment: 'b'.repeat(64),
 };
 
-function fixture(options: { admitted?: boolean; submitError?: boolean; claimed?: boolean } = {}) {
+function fixture(options: { admitted?: boolean; submitError?: boolean; claimed?: boolean; preflightError?: boolean } = {}) {
   const repository: OrderAdmissionSubmissionRepositoryV1 = {
     listCandidates: vi.fn(async () => [candidate]),
     claim: vi.fn(async () => options.claimed === false
@@ -36,7 +36,8 @@ function fixture(options: { admitted?: boolean; submitError?: boolean; claimed?:
       return { publicTxId: 'c'.repeat(64) };
     }),
   };
-  return { repository, chain, worker: new OrderAdmissionSubmissionWorkerV1(repository, chain) };
+  const preflight = { validate: vi.fn(async () => { if (options.preflightError) throw new Error('private opening rejected'); }) };
+  return { repository, chain, preflight, worker: new OrderAdmissionSubmissionWorkerV1(repository, chain, preflight) };
 }
 
 describe('OrderAdmissionSubmissionWorkerV1', () => {
@@ -55,6 +56,16 @@ describe('OrderAdmissionSubmissionWorkerV1', () => {
     await expect(worker.runOnce()).resolves.toEqual({
       scanned: 1, submitted: 0, alreadyAdmitted: 1, skipped: 0, uncertain: 0, failed: 0,
     });
+    expect(repository.claim).not.toHaveBeenCalled();
+    expect(chain.submit).not.toHaveBeenCalled();
+  });
+
+  it('fails closed before claiming or submitting when private preflight rejects', async () => {
+    const { repository, chain, preflight, worker } = fixture({ preflightError: true });
+    await expect(worker.runOnce()).resolves.toEqual({
+      scanned: 1, submitted: 0, alreadyAdmitted: 0, skipped: 0, uncertain: 0, failed: 1,
+    });
+    expect(preflight.validate).toHaveBeenCalledWith(candidate);
     expect(repository.claim).not.toHaveBeenCalled();
     expect(chain.submit).not.toHaveBeenCalled();
   });

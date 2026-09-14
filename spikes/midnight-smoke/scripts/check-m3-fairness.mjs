@@ -9,21 +9,25 @@ import {
   Contract,
   ledger,
   pureCircuits,
-} from '../contracts/managed/fair-clearing-n4/contract/index.js';
+} from '../contracts/managed/fair-clearing-n4-m3b/contract/index.js';
 
 const bytes = value => new Uint8Array(32).fill(value);
 const marketId = bytes(0x11);
 const ruleVersionHash = bytes(0x22);
 const configHash = bytes(0x33);
+const epochCloseAt = 1_800_000_000;
 const contractAddress = dummyContractAddress();
 const contract = new Contract({});
 
-function contextFor(state, coinKeyByte = 0xa1) {
+function contextFor(state, coinKeyByte = 0xa1, time = epochCloseAt - 1) {
   return createCircuitContext(
     contractAddress,
     { bytes: bytes(coinKeyByte) },
     state,
     {},
+    undefined,
+    undefined,
+    time,
   );
 }
 
@@ -83,6 +87,7 @@ function closedFixture(orders) {
     marketId,
     ruleVersionHash,
     configHash,
+    BigInt(epochCloseAt),
   ).currentContractState;
   const openings = orders.map((value, index) => ({
     order: value,
@@ -101,7 +106,7 @@ function closedFixture(orders) {
   }
   const currentRoot = ledger(state).orderCommitments.root();
   state = contract.circuits.closeEpoch(
-    contextFor(state),
+    contextFor(state, 0xa1, epochCloseAt),
     7n,
     currentRoot,
     bytes(0x20),

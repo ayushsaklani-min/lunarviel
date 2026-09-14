@@ -13,6 +13,7 @@ import { describe, expect, it } from 'vitest';
 import {
   ClosedEpochMatchingError,
   prepareClosedEpochBatchV1,
+  validateM3AdmissionEnvelopeV1,
   type ClosedEpochMatchingContextV1,
   type FrozenEncryptedOrderV1,
 } from './closedEpochMatching.js';
@@ -51,6 +52,9 @@ async function makeOrder(input: {
   readonly trader: string;
   readonly commitmentOverride?: string;
   readonly expiresAtMs?: bigint;
+  readonly minFillLots?: bigint;
+  readonly tif?: 'GFE' | 'IOC' | 'FOK';
+  readonly allowPartial?: boolean;
 }): Promise<FrozenEncryptedOrderV1> {
   const nonce = new Uint8Array(32).fill(Number(input.index) + 1);
   const blinding = new Uint8Array(32).fill(Number(input.index) + 9);
@@ -63,9 +67,9 @@ async function makeOrder(input: {
     orderType: 'LIMIT',
     quantityLots: input.quantityLots,
     limitPriceTicks: input.price,
-    minFillLots: 0n,
-    tif: 'GFE',
-    allowPartial: true,
+    minFillLots: input.minFillLots ?? 0n,
+    tif: input.tif ?? 'GFE',
+    allowPartial: input.allowPartial ?? true,
     nonce,
     createdAtMs: NOW - 1_000n,
     expiresAtMs: input.expiresAtMs ?? NOW + 1_000n,
@@ -151,6 +155,24 @@ describe('prepareClosedEpochBatchV1', () => {
     ]);
     await expect(prepareClosedEpochBatchV1(context(), orders, { resolveExistingEnvelopeKey: async () => key }))
       .rejects.toThrow(new ClosedEpochMatchingError('ORDER_EXPIRED_AT_CLOSE'));
+  });
+
+  it('fails closed on M3-unsupported private fields before matching begins', async () => {
+    const key = await generateMatcherDecryptionKeyV1({ keyId: 'matcher-1', activeFromMs: NOW - 10n, expiresAtMs: NOW + 10n });
+    const orders = await Promise.all([
+      makeOrder({ key, index: 0n, side: 'BUY', quantityLots: 7n, price: 101n, trader: 'a1'.repeat(32), minFillLots: 1n }),
+      makeOrder({ key, index: 1n, side: 'SELL', quantityLots: 7n, price: 100n, trader: 'b2'.repeat(32) }),
+    ]);
+    await expect(prepareClosedEpochBatchV1(context(), orders, { resolveExistingEnvelopeKey: async () => key }))
+      .rejects.toThrow(new ClosedEpochMatchingError('M3_UNSUPPORTED_ORDER'));
+  });
+
+  it('validates a private M3 admission opening without returning it to the caller', async () => {
+    const key = await generateMatcherDecryptionKeyV1({ keyId: 'matcher-1', activeFromMs: NOW - 10n, expiresAtMs: NOW + 10n });
+    const candidate = await makeOrder({ key, index: 0n, side: 'BUY', quantityLots: 7n, price: 101n, trader: 'a1'.repeat(32) });
+    await expect(validateM3AdmissionEnvelopeV1({
+      envelope: candidate.envelope, marketId: MARKET, epochSequence: 7n, nowMs: NOW - 1n, key,
+    })).resolves.toBeUndefined();
   });
 
   it('starts proving only after a complete, commitment-checked preparation and scrubs openings', async () => {

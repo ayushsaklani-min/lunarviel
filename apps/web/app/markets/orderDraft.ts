@@ -36,11 +36,16 @@ export type OrderDraftProblemV1 =
   | "PRICE_NOT_TICK_MULTIPLE"
   | "MIN_FILL_NOT_INTEGER"
   | "MIN_FILL_ABOVE_QUANTITY"
+  | "M3_MIN_FILL_UNSUPPORTED"
+  | "M3_TIF_UNSUPPORTED"
+  | "M3_PARTIAL_FILL_REQUIRED"
+  | "M3_UINT64_BOUND"
   | "MARKET_NOT_ACCEPTING_ORDERS"
   | "EPOCH_NOT_OPEN"
   | "EPOCH_FULL";
 
 const DECIMAL_PATTERN = /^[0-9]+$/u;
+const UINT64_MAX = (1n << 64n) - 1n;
 
 function parsePositive(value: string): bigint | undefined {
   const trimmed = value.trim();
@@ -67,17 +72,23 @@ export function validateOrderDraftV1(
   if (draft.quantityLots.trim() === "") problems.push("QUANTITY_REQUIRED");
   else if (quantity === undefined) problems.push("QUANTITY_NOT_INTEGER");
   else if (quantity % BigInt(market.lotSizeAtomic) !== 0n) problems.push("QUANTITY_NOT_LOT_MULTIPLE");
+  else if (quantity > UINT64_MAX) problems.push("M3_UINT64_BOUND");
 
   const price = parsePositive(draft.limitPriceTicks);
   if (draft.limitPriceTicks.trim() === "") problems.push("PRICE_REQUIRED");
   else if (price === undefined) problems.push("PRICE_NOT_INTEGER");
   else if (price % BigInt(market.tickSizeAtomic) !== 0n) problems.push("PRICE_NOT_TICK_MULTIPLE");
+  else if (price > UINT64_MAX) problems.push("M3_UINT64_BOUND");
 
   const minFillText = draft.minFillLots.trim();
   if (minFillText !== "") {
     if (!DECIMAL_PATTERN.test(minFillText)) problems.push("MIN_FILL_NOT_INTEGER");
     else if (quantity !== undefined && BigInt(minFillText) > quantity) problems.push("MIN_FILL_ABOVE_QUANTITY");
+    else if (BigInt(minFillText) !== 0n) problems.push("M3_MIN_FILL_UNSUPPORTED");
   }
+
+  if (draft.tif !== "GFE") problems.push("M3_TIF_UNSUPPORTED");
+  if (!draft.allowPartial) problems.push("M3_PARTIAL_FILL_REQUIRED");
 
   if (market.status !== "ACTIVE") problems.push("MARKET_NOT_ACCEPTING_ORDERS");
   if (epoch === undefined || epoch.state !== "OPEN") problems.push("EPOCH_NOT_OPEN");

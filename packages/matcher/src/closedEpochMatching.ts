@@ -15,6 +15,7 @@ const HEX_32 = /^[0-9a-f]{64}$/u;
 const DECIMAL = /^(0|[1-9][0-9]*)$/u;
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/iu;
 const IDENTIFIER = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
+const UINT64_MAX = (1n << 64n) - 1n;
 
 /**
  * The public, frozen data required before a matcher may decrypt an order.
@@ -48,6 +49,15 @@ export interface MatcherKeyResolverV1 {
   resolveExistingEnvelopeKey(keyId: string): Promise<MatcherDecryptionKeyV1>;
 }
 
+/** Private pre-admission input. Its decrypted opening never leaves this module. */
+export interface M3AdmissionEnvelopeValidationV1 {
+  readonly envelope: OrderEnvelopeV1;
+  readonly marketId: string;
+  readonly epochSequence: bigint;
+  readonly nowMs: bigint;
+  readonly key: MatcherDecryptionKeyV1;
+}
+
 /**
  * This object is intentionally private-process-only. Its `solution` and
  * `openings` contain sensitive order information and must be handed directly
@@ -73,6 +83,7 @@ export class ClosedEpochMatchingError extends Error {
     | 'ORDER_SET_MISMATCH'
     | 'ORDER_ENVELOPE_INVALID'
     | 'ORDER_OPENING_INVALID'
+    | 'M3_UNSUPPORTED_ORDER'
     | 'COMMITMENT_MISMATCH'
     | 'ORDER_EXPIRED_AT_CLOSE'
     | 'MATCHING_REJECTED') {
@@ -184,6 +195,12 @@ function parsePayload(plaintext: Uint8Array, context: ClosedEpochMatchingContext
       createdAtMs: BigInt(createdAtMs),
       expiresAtMs: BigInt(expiresAtMs),
     };
+    // Keep this exactly aligned with the M3b Compact `validateSlot` domain.
+    // This happens only in matcher memory; raw order fields never leave it.
+    if (order.quantityLots > UINT64_MAX || order.limitPriceTicks > UINT64_MAX
+      || order.minFillLots !== 0n || order.tif !== 'GFE' || !order.allowPartial) {
+      throw new ClosedEpochMatchingError('M3_UNSUPPORTED_ORDER');
+    }
     if (order.expiresAtMs <= context.closedAtMs) throw new ClosedEpochMatchingError('ORDER_EXPIRED_AT_CLOSE');
     return { order, blinding };
   } catch (error) {
@@ -240,6 +257,42 @@ function assertFrozenSet(context: ClosedEpochMatchingContextV1, rows: readonly F
   }
   for (let index = 0n; index < BigInt(context.orderCount); index += 1n) {
     if (!indexes.has(index)) throw new ClosedEpochMatchingError('ORDER_SET_MISMATCH');
+  }
+}
+
+/**
+ * Validates one still-private order before it is eligible for a public chain
+ * admission. Only a success/failure result escapes; the opening is scrubbed.
+ */
+export async function validateM3AdmissionEnvelopeV1(input: M3AdmissionEnvelopeValidationV1): Promise<void> {
+  const context: ClosedEpochMatchingContextV1 = {
+    marketId: input.marketId,
+    epochId: 'admission-validation',
+    epochSequence: input.epochSequence,
+    ruleVersion: 'm3b-validation',
+    configHash: '00'.repeat(32),
+    inputRoot: 'admission-root',
+    closedAtMs: input.nowMs,
+    orderCount: 1,
+    maxOrders: 4,
+  };
+  assertContext(context);
+  let opening: { order: OrderIntentV1; blinding: Uint8Array } | undefined;
+  try {
+    opening = await withOpenedOrderEnvelopeV1(input.envelope, input.key, plaintext => parsePayload(plaintext, context));
+    const commitment = commitOrderIntentV1(opening.order, opening.blinding);
+    try {
+      if (bytesToHex(commitment) !== input.envelope.commitment) {
+        throw new ClosedEpochMatchingError('COMMITMENT_MISMATCH');
+      }
+    } finally {
+      commitment.fill(0);
+    }
+  } finally {
+    opening?.blinding.fill(0);
+    opening?.order.marketId.fill(0);
+    opening?.order.ownerPublicKey.fill(0);
+    opening?.order.nonce.fill(0);
   }
 }
 

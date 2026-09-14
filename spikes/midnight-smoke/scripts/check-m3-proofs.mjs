@@ -13,7 +13,7 @@ import {
   Contract,
   ledger,
   pureCircuits,
-} from '../contracts/managed/fair-clearing-n4/contract/index.js';
+} from '../contracts/managed/fair-clearing-n4-m3b/contract/index.js';
 
 const PROOF_SERVER_URL = process.env.LUNARVEIL_PROOF_SERVER_URL ?? 'http://127.0.0.1:6300';
 const requestedRuns = Number.parseInt(process.env.LUNARVEIL_M3_PROOF_RUNS ?? '5', 10);
@@ -21,16 +21,25 @@ if (!Number.isSafeInteger(requestedRuns) || requestedRuns < 1 || requestedRuns >
   throw new Error('LUNARVEIL_M3_PROOF_RUNS must be an integer from 1 through 20');
 }
 
-const zkConfigDirectory = fileURLToPath(new URL('../contracts/managed/fair-clearing-n4', import.meta.url));
+const zkConfigDirectory = fileURLToPath(new URL('../contracts/managed/fair-clearing-n4-m3b', import.meta.url));
 const bytes = value => new Uint8Array(32).fill(value);
 const marketId = bytes(0x11);
 const ruleVersionHash = bytes(0x22);
 const configHash = bytes(0x33);
+const epochCloseAt = 1_800_000_000;
 const contractAddress = dummyContractAddress();
 const contract = new Contract({});
 
-function contextFor(state, coinKeyByte = 0xa1) {
-  return createCircuitContext(contractAddress, { bytes: bytes(coinKeyByte) }, state, {});
+function contextFor(state, coinKeyByte = 0xa1, time = epochCloseAt - 1) {
+  return createCircuitContext(
+    contractAddress,
+    { bytes: bytes(coinKeyByte) },
+    state,
+    {},
+    undefined,
+    undefined,
+    time,
+  );
 }
 
 function order(nonceByte, side, quantityLots, limitPriceTicks) {
@@ -68,6 +77,7 @@ function fairnessCircuitResult() {
     marketId,
     ruleVersionHash,
     configHash,
+    BigInt(epochCloseAt),
   ).currentContractState;
 
   for (let index = 0; index < commitments.length; index++) {
@@ -80,7 +90,7 @@ function fairnessCircuitResult() {
   }
   const root = ledger(state).orderCommitments.root();
   state = contract.circuits.closeEpoch(
-    contextFor(state),
+    contextFor(state, 0xa1, epochCloseAt),
     7n,
     root,
     bytes(0x20),

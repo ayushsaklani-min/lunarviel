@@ -8,6 +8,7 @@ import {
 } from '@lunarveil/db';
 import {
   OrderAdmissionSubmissionWorkerV1,
+  type OrderAdmissionPreflightV1,
   type OrderAdmissionChainV1,
   type OrderAdmissionSubmissionRunV1,
 } from '@lunarveil/matcher';
@@ -22,13 +23,18 @@ export function composeAdmissionWorkerV1(input: {
   readonly config: AdmissionWorkerConfigV1;
   readonly databaseUrl: string;
   readonly chain: OrderAdmissionChainV1;
+  /** Required before this worker may submit a commitment to chain. */
+  readonly preflight?: OrderAdmissionPreflightV1;
   readonly nowMs?: () => bigint;
   readonly logLine?: (line: string) => void;
 }) {
   const pool = new Pool({ connectionString: input.databaseUrl, max: 4 });
   const sql = nodePostgresSerializablePool(pool);
+  const repository = new PostgresOrderAdmissionSubmissionRepositoryV1(sql);
   const worker = new OrderAdmissionSubmissionWorkerV1(
-    new PostgresOrderAdmissionSubmissionRepositoryV1(sql), input.chain, input.config.batchSize,
+    repository, input.chain,
+    input.preflight ?? { validate: async () => { throw new Error('M3_PREFLIGHT_UNAVAILABLE'); } },
+    input.config.batchSize,
   );
   const lock = new PostgresAdvisoryLockV1(sql, 'lunarveil:order-admission-submission');
   const logger = createRedactedLoggerV1({

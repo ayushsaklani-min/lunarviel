@@ -2,6 +2,7 @@ export interface AdmissionWorkerConfigV1 {
   readonly intervalMs: number;
   readonly batchSize: number;
   readonly chainModule: string;
+  readonly preflightModule: string;
 }
 
 export class AdmissionWorkerConfigError extends Error {
@@ -20,12 +21,17 @@ function integer(value: string | undefined, fallback: number, min: number, max: 
 
 export function parseAdmissionWorkerConfigV1(env: Env = process.env): AdmissionWorkerConfigV1 {
   const chainModule = env.LUNARVEIL_ADMISSION_CHAIN_MODULE?.trim();
+  const preflightModule = env.LUNARVEIL_ADMISSION_PREFLIGHT_MODULE?.trim();
   if (!chainModule || chainModule.length > 1_024 || /[\u0000-\u001f\u007f]/u.test(chainModule)) {
     throw new AdmissionWorkerConfigError('INVALID_CHAIN_MODULE');
+  }
+  if (!preflightModule || preflightModule.length > 1_024 || /[\u0000-\u001f\u007f]/u.test(preflightModule)) {
+    throw new AdmissionWorkerConfigError('INVALID_PREFLIGHT_MODULE');
   }
   return {
     intervalMs: integer(env.LUNARVEIL_ADMISSION_INTERVAL_MS, 30_000, 1_000, 3_600_000, 'INVALID_INTERVAL'),
     batchSize: integer(env.LUNARVEIL_ADMISSION_BATCH_SIZE, 10, 1, 100, 'INVALID_BATCH_SIZE'),
     chainModule,
+    preflightModule,
   };
 }

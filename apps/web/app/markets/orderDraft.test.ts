@@ -3,7 +3,7 @@ import { describe, expect, it } from "vitest";
 import type { EpochV1, MarketV1, MatcherKeyV1 } from "@lunarveil/api-client";
 
 import { validateOrderDraftV1, type OrderDraftV1 } from "./orderDraft";
-import { buildSealedOrderV1 } from "./sealOrder";
+import { buildSealedOrderV1, ownerSecretForCancellationV1 } from "./sealOrder";
 
 const market: MarketV1 = {
   id: "market-1",
@@ -35,7 +35,7 @@ const draft: OrderDraftV1 = {
   side: "BUY",
   quantityLots: "500",
   limitPriceTicks: "105",
-  minFillLots: "100",
+  minFillLots: "",
   tif: "GFE",
   allowPartial: true,
 };
@@ -69,18 +69,28 @@ describe("validateOrderDraftV1", () => {
       .toContain("PRICE_NOT_INTEGER");
   });
 
-  it("handles amounts far beyond Number.MAX_SAFE_INTEGER exactly", () => {
+  it("keeps integer validation exact and rejects values outside M3's Uint64 proof bound", () => {
     // Deliberately not a lot multiple, and far past what a double can hold.
     const huge = (BigInt(Number.MAX_SAFE_INTEGER) * 1000n + 50n).toString();
     expect(validateOrderDraftV1({ ...draft, quantityLots: huge }, market, epoch))
       .toContain("QUANTITY_NOT_LOT_MULTIPLE");
     const hugeMultiple = ((BigInt(huge) - 50n) * 100n).toString();
-    expect(validateOrderDraftV1({ ...draft, quantityLots: hugeMultiple }, market, epoch)).toEqual([]);
+    expect(validateOrderDraftV1({ ...draft, quantityLots: hugeMultiple }, market, epoch))
+      .toContain("M3_UINT64_BOUND");
   });
 
   it("rejects a minimum fill above the quantity", () => {
     expect(validateOrderDraftV1({ ...draft, minFillLots: "600" }, market, epoch))
       .toContain("MIN_FILL_ABOVE_QUANTITY");
+  });
+
+  it("rejects the M3a features the deployed proof circuit cannot prove", () => {
+    expect(validateOrderDraftV1({ ...draft, minFillLots: "1" }, market, epoch))
+      .toContain("M3_MIN_FILL_UNSUPPORTED");
+    expect(validateOrderDraftV1({ ...draft, tif: "FOK" }, market, epoch))
+      .toContain("M3_TIF_UNSUPPORTED");
+    expect(validateOrderDraftV1({ ...draft, allowPartial: false }, market, epoch))
+      .toContain("M3_PARTIAL_FILL_REQUIRED");
   });
 
   it("refuses a market or epoch that cannot accept the order", () => {
@@ -120,7 +130,6 @@ describe("buildSealedOrderV1", () => {
       draft, market, epoch,
       matcherKey: published,
       traderTagHash: "cd".repeat(32),
-      verifyingKey: "ab".repeat(32),
       clientRequestId: crypto.randomUUID(),
       nowMs: 1_800_000_000_000n,
       lifetimeMs: 3_600_000n,
@@ -144,7 +153,6 @@ describe("buildSealedOrderV1", () => {
       draft, market, epoch,
       matcherKey: published,
       traderTagHash: "cd".repeat(32),
-      verifyingKey: "ab".repeat(32),
       clientRequestId: crypto.randomUUID(),
       nowMs: 1_800_000_000_000n,
       lifetimeMs: 3_600_000n,
@@ -163,7 +171,6 @@ describe("buildSealedOrderV1", () => {
       draft, market, epoch,
       matcherKey: published,
       traderTagHash: "cd".repeat(32),
-      verifyingKey: "ab".repeat(32),
       clientRequestId: crypto.randomUUID(),
       nowMs: 1_800_000_000_000n,
       lifetimeMs: 3_600_000n,
@@ -178,5 +185,12 @@ describe("buildSealedOrderV1", () => {
     expect(opened.quantityLots).toBe("500");
     // Integers stay decimal strings through the plaintext too.
     expect(typeof opened.limitPriceTicks).toBe("string");
+    const { deriveOwnerAuthorizationV1 } = await import("@lunarveil/crypto");
+    const ownerSecret = await ownerSecretForCancellationV1(sealed.commitment);
+    expect(ownerSecret).toBeDefined();
+    expect(Array.from(deriveOwnerAuthorizationV1(ownerSecret!))).toEqual(
+      Array.from(Buffer.from(opened.ownerPublicKey as string, "hex")),
+    );
+    ownerSecret!.fill(0);
   });
 });

@@ -94,6 +94,9 @@ npm run midnight:m3
 ```
 
 Compact compilation uses the pinned compiler through WSL on Windows.
+The historical M3a source/build remains separate from deadline-protected M3b.
+`npm run midnight:m3` compiles and checks M3b; the existing M3 chain checkpoint
+still targets M3a. M3b has not been deployed and is not a live-contract upgrade.
 Real proofs require a controlled proof server. Chain commands require explicit
 network configuration and funded test-wallet secrets. Never send private
 witnesses to an untrusted prover.

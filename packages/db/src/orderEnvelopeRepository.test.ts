@@ -63,6 +63,10 @@ class FakePostgresClient implements SerializableSqlClient {
       const row = this.byCommitment.get(values[0] as string);
       return { rows: row ? [row as RowType] : [] };
     }
+    if (text.includes('WHERE "id" = $1 AND "state" = \'PENDING_CHAIN\'')) {
+      const row = [...this.byRequestId.values()].find(value => value.id === values[0] && value.state === 'PENDING_CHAIN');
+      return { rows: row ? [row as RowType] : [] };
+    }
     throw new Error(`Unexpected SQL: ${text}`);
   }
 
@@ -149,5 +153,15 @@ describe('PostgresOrderEnvelopeRepository', () => {
       () => repository.submit({ envelope: duplicate, clientSignature: new Uint8Array([7]) }),
       'DUPLICATE_COMMITMENT',
     );
+  });
+
+  it('loads ciphertext only through the matcher-only pending preflight path', async () => {
+    const client = new FakePostgresClient();
+    const repository = new PostgresOrderEnvelopeRepository(fakePool(client), { newId: () => 'order-1' });
+    const submitted = await envelope();
+    await repository.submit({ envelope: submitted, clientSignature: new Uint8Array([7]) });
+
+    await expect(repository.loadPendingEnvelope('order-1')).resolves.toEqual(submitted);
+    expect(client.commands.at(-1)?.text).toContain('"state" = \'PENDING_CHAIN\'');
   });
 });

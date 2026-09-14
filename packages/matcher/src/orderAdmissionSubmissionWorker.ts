@@ -23,6 +23,11 @@ export interface OrderAdmissionChainV1 {
   close?(): Promise<void>;
 }
 
+/** Must validate the encrypted opening before any public admission mutation. */
+export interface OrderAdmissionPreflightV1 {
+  validate(candidate: OrderAdmissionSubmissionCandidateV1): Promise<void>;
+}
+
 export interface OrderAdmissionSubmissionRunV1 {
   readonly scanned: number;
   readonly submitted: number;
@@ -52,6 +57,7 @@ export class OrderAdmissionSubmissionWorkerV1 {
   constructor(
     private readonly repository: OrderAdmissionSubmissionRepositoryV1,
     private readonly chain: OrderAdmissionChainV1,
+    private readonly preflight: OrderAdmissionPreflightV1,
     private readonly batchSize = 10,
   ) {
     if (!Number.isSafeInteger(batchSize) || batchSize < 1 || batchSize > 100) {
@@ -75,6 +81,11 @@ export class OrderAdmissionSubmissionWorkerV1 {
           alreadyAdmitted += 1;
           continue;
         }
+
+        // This must precede the durable claim and public chain mutation. A
+        // malformed opening remains pending for an operator/reconciler; it is
+        // never silently admitted or exposed in an error.
+        await this.preflight.validate(candidate);
 
         const claim = await this.repository.claim(candidate.orderId);
         if (!claim.claimed) {

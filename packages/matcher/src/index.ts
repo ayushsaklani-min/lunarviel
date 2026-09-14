@@ -9,6 +9,7 @@ export * from './epochCloseService.js';
 export * from './referencePrice.js';
 export * from './orderEnvelopeIntake.js';
 export * from './orderAdmissionSubmissionWorker.js';
+export * from './m3AdmissionPreflight.js';
 export * from './sessionChallenge.js';
 export * from './sharedDevelopmentMatcherKey.js';
 export * from './traderOrderHistory.js';
