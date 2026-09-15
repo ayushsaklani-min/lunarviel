@@ -18,6 +18,7 @@ export class WalletConnectorError extends Error {
     | 'WALLET_NOT_FOUND'
     | 'UNSUPPORTED_API_VERSION'
     | 'INVALID_WALLET_API'
+    | 'INVALID_WALLET_ADDRESS'
     | 'WALLET_DISCONNECTED'
     | 'NETWORK_MISMATCH';
 

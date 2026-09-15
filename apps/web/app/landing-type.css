@@ -1,0 +1,101 @@
+/* Self-hosted variable fonts; licenses ship alongside the font assets. */
+@font-face {
+  font-family: 'Lunar Space';
+  src: url('/fonts/space-grotesk-latin-variable.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+}
+@font-face {
+  font-family: 'Lunar Manrope';
+  src: url('/fonts/manrope-latin-variable.woff2') format('woff2');
+  font-style: normal;
+  font-weight: 400 700;
+  font-display: swap;
+}
+
+/* Landing-only type system: do not change the trading workspace's controls. */
+.lunar-story .story-nav,
+.lunar-story .story-opening,
+.lunar-story .story-chapter,
+.lunar-story .story-chapter-note,
+.lunar-story .principle-list article,
+.lunar-story .story-finale { border: 0; }
+.lunar-story .story-diagram { border: 0; box-shadow: 0 16px 60px #00000020; }
+.lunar-story .story-beta { border: 0; padding-left: 0; padding-right: 0; }
+.lunar-story .story-chapter-note { margin-top: 16px; padding-top: 0; }
+.lunar-story .story-chapter-note > span { display: none; }
+.lunar-story .story-footer { padding-bottom: 40px !important; }
+.lunar-story {
+  --font-display: 'Lunar Space', Arial, sans-serif;
+  --font-body: 'Lunar Manrope', Arial, sans-serif;
+  font-family: var(--font-body);
+  font-size: 1rem;
+  line-height: 1.7;
+  font-synthesis: none;
+}
+.lunar-story h1, .lunar-story h2, .lunar-story h3, .lunar-story .story-brand {
+  font-family: var(--font-display);
+  font-weight: 500;
+  text-wrap: balance;
+}
+.lunar-story em { font-family: inherit; font-style: normal; font-weight: inherit; color: #c4d1ff; }
+.lunar-story .story-brand { font-size: 1.5rem; font-weight: 600; letter-spacing: -.045em; }
+.lunar-story .story-hero h1 { font-size: clamp(3.5rem, 7.4vw, 7.25rem); line-height: 1.03; letter-spacing: -.055em; }
+.lunar-story .story-hero-copy { max-width: 950px; }
+.lunar-story .story-opening h2 { font-size: clamp(2.35rem, 4.6vw, 4.5rem); line-height: 1.15; letter-spacing: -.045em; }
+.lunar-story .story-opening h2 span { color: #bec9e7; }
+.lunar-story .story-chapter h2, .lunar-story .story-principles h2 { font-size: clamp(2.5rem, 4.4vw, 4.25rem); line-height: 1.12; letter-spacing: -.045em; }
+.lunar-story .story-finale h2 { font-size: clamp(2.6rem, 5.8vw, 5.5rem); line-height: 1.1; letter-spacing: -.045em; }
+.lunar-story .story-lead { font-size: clamp(1.125rem, 1.65vw, 1.4rem); line-height: 1.65; color: #c3cada; }
+.lunar-story .story-opening-bottom p,
+.lunar-story .story-chapter-copy > p:not(.story-kicker),
+.lunar-story .principle-list p,
+.lunar-story .story-finale p:not(.story-kicker) { font-size: clamp(1rem, 1.15vw, 1.125rem); line-height: 1.85; color: #b8c2d6; text-wrap: pretty; }
+.lunar-story .principle-list h3 { font-size: 1.3rem; line-height: 1.4; letter-spacing: -.02em; }
+.lunar-story .story-kicker { font-size: .72rem; font-weight: 600; line-height: 1.8; letter-spacing: .15em; color: #c2cce3; }
+.lunar-story .story-nav nav { font-size: .875rem; }
+.lunar-story .story-button { font-size: .875rem; font-weight: 700; line-height: 1.5; min-height: 48px; }
+.lunar-story .story-text-link { font-size: .875rem; }
+.lunar-story .story-network, .lunar-story .story-finale small { font-size: .75rem; line-height: 1.6; color: #abb7d0; }
+.lunar-story .story-chapter-note { font-size: .8125rem; line-height: 1.75; }
+.lunar-story .story-small-label { font-size: .6875rem; line-height: 1.8; letter-spacing: .13em; color: #aebbd8; }
+.lunar-story .story-chapter-nav { font-size: .8125rem; line-height: 1.5; color: #aab7d3; }
+.lunar-story .story-beta { font-size: .625rem; }
+.lunar-story .story-hero-bottom, .lunar-story .story-moon-caption { font-size: .6875rem; line-height: 1.6; letter-spacing: .12em; }
+.lunar-story .story-footer > span, .lunar-story .story-footer > a:last-child { font-size: .75rem; line-height: 1.6; color: #abb7d0; }
+
+/* Small diagram labels are still secondary, but no longer 6–9 px text. */
+.lunar-story .diagram-top, .lunar-story .diagram-bottom { font-size: .625rem; line-height: 1.6; letter-spacing: .08em; gap: 12px; }
+.lunar-story .diagram-top span:last-child { font-size: .5625rem; }
+.lunar-story .sealed-label, .lunar-story .sealed-card footer,
+.lunar-story .batch-side > span, .lunar-story .batch-center > span,
+.lunar-story .batch-center small { font-size: .625rem; line-height: 1.6; letter-spacing: .08em; }
+.lunar-story .sealed-card > div, .lunar-story .proof-inputs span,
+.lunar-story .proof-result { font-size: .75rem; line-height: 1.5; }
+.lunar-story .proof-core { font-size: .6875rem; letter-spacing: .1em; }
+.lunar-story .proof-visual { height: auto; min-height: 350px; }
+.lunar-story .journey-location { font-size: .625rem; letter-spacing: .1em; }
+.lunar-story .journey-destination { font-family: var(--font-display); font-size: .875rem; line-height: 1.5; }
+
+@media (max-width: 1000px) {
+  .lunar-story .story-chapter h2 { font-size: clamp(2.35rem, 4.5vw, 3rem); }
+  .lunar-story .story-nav nav { gap: 22px; }
+}
+@media (max-width: 700px) {
+  .lunar-story .story-brand { font-size: 1.35rem; }
+  .lunar-story .story-hero h1 { font-size: clamp(2.75rem, 10.5vw, 4.25rem); letter-spacing: -.05em; }
+  .lunar-story .story-opening h2 { font-size: clamp(2rem, 7.2vw, 3rem); letter-spacing: -.04em; }
+  .lunar-story .story-chapter h2, .lunar-story .story-principles h2 { font-size: clamp(2.2rem, 8.3vw, 3.25rem); letter-spacing: -.04em; }
+  .lunar-story .story-finale h2 { font-size: clamp(2.2rem, 8.5vw, 3.5rem); }
+  .lunar-story .story-kicker { font-size: .625rem; letter-spacing: .1em; }
+  .lunar-story .story-nav-cta { font-size: .75rem; }
+  .lunar-story .story-actions { flex-wrap: wrap; gap: 18px 22px; }
+  .lunar-story .story-button, .lunar-story .story-text-link { font-size: .8125rem; }
+  .lunar-story .story-chapter-nav { font-size: .6875rem; gap: 10px; }
+  .lunar-story .story-chapter-nav a { gap: 5px; }
+  .lunar-story .journey-location { font-size: .5625rem; }
+  .lunar-story .journey-destination { font-size: .75rem; }
+  .lunar-story .story-hero-bottom { font-size: .625rem; }
+  .lunar-story .proof-visual { height: auto; min-height: 330px; }
+}

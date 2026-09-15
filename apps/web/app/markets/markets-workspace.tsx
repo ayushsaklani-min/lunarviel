@@ -153,7 +153,7 @@ export function MarketsWorkspace({
         {markets.phase === "failed" && (
           <Notice tone="error">
             <strong>Markets unavailable.</strong>{" "}
-            <span>The API returned <code>{markets.code}</code>. Nothing is shown rather than a stale or guessed catalog.</span>
+            <span>The API returned <code>{markets.code}</code>. Check that the backend is running and allows this site's origin, then press Refresh. A sleeping free-tier backend may take a moment to respond.</span>
           </Notice>
         )}
 

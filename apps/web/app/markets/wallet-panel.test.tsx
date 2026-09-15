@@ -1,5 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
-import { cleanup, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 
 import { LunarveilApiClientV1 } from "@lunarveil/api-client";
 
@@ -9,6 +9,7 @@ const NETWORK_ID = "undeployed";
 const ADDRESS = "4a71380c5c1e5b9d2846a6d5a473645d64697a57dd0374dba5e26b04251dc330";
 
 interface WalletBehaviourV1 {
+  readonly address?: string;
   readonly apiVersion?: string;
   readonly signDataResult?: unknown;
   readonly signDataThrows?: Error;
@@ -27,7 +28,7 @@ function fakeWallet(behaviour: WalletBehaviourV1 = {}) {
           return { status: behaviour.connectionStatus ?? "connected", networkId };
         },
         async getConfiguration() { return { networkId }; },
-        async getUnshieldedAddress() { return { unshieldedAddress: ADDRESS }; },
+        async getUnshieldedAddress() { return { unshieldedAddress: behaviour.address ?? ADDRESS }; },
         async signData(data: string) {
           if (behaviour.signDataThrows !== undefined) throw behaviour.signDataThrows;
           return behaviour.signDataResult ?? {
@@ -74,6 +75,51 @@ afterEach(() => {
 });
 
 describe("WalletPanel", () => {
+  it("converts Lace's Bech32m address to the backend ledger identity before signing", async () => {
+    const { bodies } = stubApi({
+      "/v1/sessions/challenges": { body: challenge },
+      "/v1/sessions/verify": { body: session },
+    });
+    render(<WalletPanel api={api()} networkId="preview" registry={{ lace: fakeWallet({
+      address: "mn_addr_preview1ffcnsrzurede62zx5m26gumyt4jxj7jhm5phfka9uf4sgfgacvcqhh4m92",
+    }) }} />);
+    fireEvent.click(screen.getByRole("button", { name: /Test Wallet/u }));
+    await waitFor(() => expect(screen.getByText("Session open")).toBeTruthy());
+    expect(bodies[0]).toEqual({ domain: globalThis.location.host, walletIdentity: ADDRESS });
+  });
+  it("rediscovers Lace injected after mount and connects on the configured network", async () => {
+    stubApi({
+      "/v1/sessions/challenges": { body: challenge },
+      "/v1/sessions/verify": { body: session },
+    });
+    vi.stubGlobal("midnight", undefined);
+    render(<WalletPanel api={api()} networkId="preview" />);
+    const provider = fakeWallet();
+    const connect = vi.spyOn(provider, "connect");
+    vi.stubGlobal("midnight", { lace: provider });
+    fireEvent.click(screen.getByRole("button", { name: "Retry wallet detection" }));
+    fireEvent.click(screen.getByRole("button", { name: /Test Wallet/u }));
+    await waitFor(() => expect(screen.getByText("Session open")).toBeTruthy());
+    expect(connect).toHaveBeenCalledWith("preview");
+  });
+
+  it("detects late injection automatically", async () => {
+    vi.stubGlobal("midnight", undefined);
+    render(<WalletPanel api={api()} networkId="preview" />);
+    vi.stubGlobal("midnight", { lace: fakeWallet() });
+    await waitFor(() => expect(screen.getByRole("button", { name: /Test Wallet/u })).toBeTruthy(), { timeout: 2500 });
+  });
+
+  it("contains an extension connection rejection without exposing its raw message", async () => {
+    const provider = fakeWallet();
+    vi.spyOn(provider, "connect").mockRejectedValue(new Error("Could not establish connection. Receiving end does not exist. private-detail"));
+    render(<WalletPanel api={api()} networkId="preview" registry={{ lace: provider }} />);
+    fireEvent.click(screen.getByRole("button", { name: /Test Wallet/u }));
+    await waitFor(() => expect(screen.getByText("WALLET_EXTENSION_UNAVAILABLE")).toBeTruthy());
+    expect(screen.queryByText("Session open")).toBeNull();
+    expect(document.body.textContent).not.toContain("private-detail");
+  });
+
   it("says plainly when no compatible wallet is installed", () => {
     render(<WalletPanel api={api()} networkId={NETWORK_ID} registry={{}} />);
     expect(screen.getByText(/No compatible Midnight wallet detected/u)).toBeTruthy();

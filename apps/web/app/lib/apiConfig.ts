@@ -12,10 +12,21 @@
 export const DEFAULT_API_BASE_URL_V1 = 'http://127.0.0.1:3001';
 
 export class ApiConfigError extends Error {
-  constructor(readonly code: 'INVALID_API_BASE_URL') {
+  constructor(readonly code: 'INVALID_API_BASE_URL' | 'INVALID_CHAIN_NETWORK') {
     super(code);
     this.name = 'ApiConfigError';
   }
+}
+
+/** Network is explicit for hosted APIs; never silently select a real network. */
+export function resolveWalletNetworkV1(env: Readonly<Record<string, string | undefined>> = {}): string {
+  const value = env.LUNARVEIL_CHAIN_NETWORK?.trim();
+  if (!value) {
+    if (isLoopback(new URL(resolveApiBaseUrlV1(env)).hostname)) return 'undeployed';
+    throw new ApiConfigError('INVALID_CHAIN_NETWORK');
+  }
+  if (['undeployed', 'preview', 'preprod', 'mainnet'].includes(value)) return value;
+  throw new ApiConfigError('INVALID_CHAIN_NETWORK');
 }
 
 function isLoopback(hostname: string): boolean {

@@ -9,6 +9,7 @@ import {
   connectSelectedWallet,
   discoverCompatibleWallets,
   signSessionMessageV1,
+  walletIdentityFromAddressV1,
   type WalletDescriptor,
   type WalletRegistry,
 } from "@lunarveil/midnight";
@@ -70,7 +71,7 @@ export async function openWalletSessionV1(input: {
 
   const init = input.signal === undefined ? {} : { signal: input.signal };
   const challenge = await input.api.createSessionChallenge(
-    { domain: input.domain, walletIdentity: unshieldedAddress },
+    { domain: input.domain, walletIdentity: walletIdentityFromAddressV1(unshieldedAddress, input.networkId) },
     init,
   );
 

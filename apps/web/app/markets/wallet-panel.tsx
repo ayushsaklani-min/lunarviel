@@ -18,6 +18,11 @@ export interface WalletSessionStateV1 {
 }
 
 function failureCode(error: unknown): string {
+  // Recognize the extension transport failure without displaying arbitrary
+  // extension messages (which may contain private information).
+  if (error instanceof Error && /Receiving end does not exist|Extension context invalidated/u.test(error.message)) {
+    return "WALLET_EXTENSION_UNAVAILABLE";
+  }
   if (error instanceof WalletConnectorError) return error.code;
   if (error instanceof WalletSignatureError) return error.code;
   if (isLunarveilApiError(error)) {
@@ -50,13 +55,24 @@ export function WalletPanel({
   const [state, setState] = useState<WalletSessionStateV1 | undefined>(undefined);
   const [failure, setFailure] = useState<string | undefined>(undefined);
 
-  const resolvedRegistry = registry ?? (globalThis as { midnight?: WalletRegistry }).midnight;
+  const discover = useCallback(() => {
+    const current = registry ?? (globalThis as { midnight?: WalletRegistry }).midnight;
+    setWallets(discoverWalletsV1(current));
+  }, [registry]);
 
   useEffect(() => {
-    setWallets(discoverWalletsV1(resolvedRegistry));
-  }, [resolvedRegistry]);
+    discover();
+    // Extensions may inject after hydration, or when the user unlocks Lace.
+    const timer = setInterval(discover, 1_000);
+    globalThis.addEventListener("focus", discover);
+    return () => {
+      clearInterval(timer);
+      globalThis.removeEventListener("focus", discover);
+    };
+  }, [discover]);
 
   const connect = useCallback(async (walletId: string) => {
+    const resolvedRegistry = registry ?? (globalThis as { midnight?: WalletRegistry }).midnight;
     if (api === undefined || resolvedRegistry === undefined) {
       setFailure("WALLET_UNAVAILABLE");
       return;
@@ -80,7 +96,7 @@ export function WalletPanel({
     } finally {
       setBusyWalletId(undefined);
     }
-  }, [api, networkId, onSession, resolvedRegistry]);
+  }, [api, networkId, onSession, registry]);
 
   const disconnect = useCallback(() => {
     // Dropping the reference is the whole logout: nothing was persisted.
@@ -92,6 +108,7 @@ export function WalletPanel({
   return (
     <section className="workspace-panel" aria-labelledby="wallet-title">
       <h2 id="wallet-title">Wallet</h2>
+      <p className="workspace-placeholder">Wallet network: <strong>{networkId}</strong>. Select this network in Midnight Lace.</p>
 
       {state !== undefined ? (
         <div className="wallet-connected">
@@ -107,6 +124,7 @@ export function WalletPanel({
         <p className="workspace-placeholder">
           No compatible Midnight wallet detected. Lunarveil requires DApp Connector
           API <code>4.0.1</code>.
+          {" "}Open and unlock the Midnight-enabled Lace extension, then retry detection.
         </p>
       ) : (
         <ul className="wallet-list">
@@ -131,10 +149,14 @@ export function WalletPanel({
         </ul>
       )}
 
+      {state === undefined && <button className="workspace-refresh" type="button" onClick={discover}>Retry wallet detection</button>}
+
       {failure !== undefined && (
         <p className="workspace-notice workspace-notice-error">
           <strong>Wallet session failed.</strong>{" "}
           <span>Reported <code>{failure}</code>. No session was opened.</span>
+          {failure === "WALLET_EXTENSION_UNAVAILABLE" && <span> Open Lace, unlock it, and reload this tab. If Lace was updated, restart the browser.</span>}
+          {failure === "NETWORK_MISMATCH" && <span> Select {networkId} in Lace and reconnect.</span>}
         </p>
       )}
 

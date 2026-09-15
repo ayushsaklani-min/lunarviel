@@ -1,6 +1,19 @@
 import { describe, expect, it } from "vitest";
 
-import { ApiConfigError, DEFAULT_API_BASE_URL_V1, resolveApiBaseUrlV1 } from "./apiConfig";
+import { ApiConfigError, DEFAULT_API_BASE_URL_V1, resolveApiBaseUrlV1, resolveWalletNetworkV1 } from "./apiConfig";
+
+describe("resolveWalletNetworkV1", () => {
+  it("uses undeployed only for local development", () => {
+    expect(resolveWalletNetworkV1({})).toBe("undeployed");
+    expect(() => resolveWalletNetworkV1({ LUNARVEIL_API_BASE_URL: "https://api.example.com" }))
+      .toThrow("INVALID_CHAIN_NETWORK");
+  });
+  it("passes an explicitly configured network and rejects unknown networks", () => {
+    expect(resolveWalletNetworkV1({ LUNARVEIL_CHAIN_NETWORK: "preview" })).toBe("preview");
+    expect(() => resolveWalletNetworkV1({ LUNARVEIL_CHAIN_NETWORK: "testnet-02" }))
+      .toThrow("INVALID_CHAIN_NETWORK");
+  });
+});
 
 describe("resolveApiBaseUrlV1", () => {
   it("defaults to a loopback development API", () => {
