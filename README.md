@@ -6,7 +6,7 @@ Built for the **AKINDO × Midnight Buildathon 2026**.
 
 | | |
 | --- | --- |
-| 🌐 Web app | Vercel: `lunarveil-review` (landing + `/markets`) |
+| 🌐 Web app | [**lunarveil-review.vercel.app**](https://lunarveil-review.vercel.app) · [`/markets`](https://lunarveil-review.vercel.app/markets) |
 | 🔌 API | [`lunarveil-api.onrender.com/v1/system/status`](https://lunarveil-api.onrender.com/v1/system/status) |
 | 🧮 Proof server | `lunarveil-proof-server.onrender.com` (pinned `midnightntwrk/proof-server:8.1.0`) |
 | ⛓️ Network | Midnight **Preview** testnet |
