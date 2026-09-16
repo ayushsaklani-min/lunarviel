@@ -53,6 +53,7 @@ export interface LunarveilApiDependencies {
       readonly acceptedAtMs: bigint | undefined;
       readonly chainAdmissionTxId: string | undefined;
       readonly leafIndex: string | undefined;
+      readonly admissionSubmittedTxId?: string | undefined;
     }[]>;
   };
   /**
@@ -540,6 +541,7 @@ export function buildLunarveilApi(
             ...(order.acceptedAtMs === undefined ? {} : { acceptedAtMs: order.acceptedAtMs.toString() }),
             ...(order.chainAdmissionTxId === undefined ? {} : { chainAdmissionTxId: order.chainAdmissionTxId }),
             ...(order.leafIndex === undefined ? {} : { leafIndex: order.leafIndex }),
+            ...(order.admissionSubmittedTxId === undefined ? {} : { admissionSubmittedTxId: order.admissionSubmittedTxId }),
           })),
         };
       } catch (error) {

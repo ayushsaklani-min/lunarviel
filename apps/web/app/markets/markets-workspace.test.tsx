@@ -137,7 +137,7 @@ describe("MarketsWorkspace", () => {
     expect(screen.queryByText("Markets unavailable.")).toBeNull();
   });
 
-  it("states plainly that the chain admission lifecycle cannot complete yet", async () => {
+  it("states plainly who submits admission and what is not yet claimed", async () => {
     stubFetch({
       "/v1/markets": { body: { markets: [market] } },
       "/v1/system/status": { body: status },
@@ -146,9 +146,10 @@ describe("MarketsWorkspace", () => {
     render(<MarketsWorkspace apiBaseUrl={API_BASE_URL} />);
 
     await waitFor(() => { expect(screen.getByText("NIGHT / USDCX")).toBeTruthy(); });
-    // The UI must not imply a working order lifecycle that does not exist.
-    expect(screen.getByText(/nothing submits an admission transaction/u)).toBeTruthy();
-    expect(screen.getByText("PENDING_CHAIN")).toBeTruthy();
+    // The UI must not imply more of the lifecycle than exists.
+    expect(screen.getByText(/operator-run admission worker/u)).toBeTruthy();
+    expect(screen.getByText(/Settlement is a later/u)).toBeTruthy();
+    expect(screen.getByText(/matcher can decrypt/u)).toBeTruthy();
   });
 
   it("fails closed on a misconfigured API origin without attempting a request", async () => {

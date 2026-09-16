@@ -42,6 +42,19 @@ function pool(
 }
 
 describe('PostgresTraderOrderHistoryRepositoryV1', () => {
+  it('exposes a finalized admission submission tx without trusting unfinished attempts', async () => {
+    const capture: { text?: string; values?: readonly unknown[] } = {};
+    const repository = new PostgresTraderOrderHistoryRepositoryV1(pool([
+      row({ admissionSubmittedTxId: '00ab'.repeat(8) }),
+    ], capture));
+    const [order] = await repository.listForTrader({ traderTagHash: TAG, limit: 10 });
+    expect(order?.admissionSubmittedTxId).toBe('00ab'.repeat(8));
+    expect(capture.text).toContain(`"state" = 'SUBMITTED'`);
+    await expect(new PostgresTraderOrderHistoryRepositoryV1(pool([
+      row({ admissionSubmittedTxId: 'bad tx id' }),
+    ])).listForTrader({ traderTagHash: TAG, limit: 10 })).rejects.toThrow('INVALID_ROW');
+  });
+
   it('selects only public workflow columns, scoped to one trader tag', async () => {
     const capture: { text?: string; values?: readonly unknown[] } = {};
     const repository = new PostgresTraderOrderHistoryRepositoryV1(pool([row()], capture));

@@ -224,9 +224,9 @@ export function OrderTicket({
         <p className="workspace-notice workspace-notice-info">
           <strong>Order accepted for chain admission.</strong>{" "}
           <span>
-            State <code>{accepted.state}</code>. It stays in that state until an
-            admission transaction is submitted on chain, which this system does
-            not yet do.
+            State <code>{accepted.state}</code>. The admission worker now proves and
+            submits its commitment on Midnight; the transaction appears under
+            Your orders once it finalizes.
           </span>
         </p>
       )}

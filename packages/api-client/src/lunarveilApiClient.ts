@@ -193,6 +193,9 @@ function parseTraderOrder(value: unknown): TraderOrderV1 {
       ? {}
       : { chainAdmissionTxId: requireString(raw.chainAdmissionTxId, 255) }),
     ...(raw.leafIndex === undefined ? {} : { leafIndex: requireDecimal(raw.leafIndex) }),
+    ...(raw.admissionSubmittedTxId === undefined
+      ? {}
+      : { admissionSubmittedTxId: requireString(raw.admissionSubmittedTxId, 255) }),
   };
 }
 

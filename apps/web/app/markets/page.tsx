@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 
-import { resolveApiBaseUrlV1, resolveWalletNetworkV1 } from "../lib/apiConfig";
+import { resolveApiBaseUrlV1, resolveMarketContractAddressV1, resolveWalletNetworkV1 } from "../lib/apiConfig";
 import { MarketsWorkspace } from "./markets-workspace";
 
 export const metadata: Metadata = {
@@ -17,5 +17,13 @@ export const dynamic = "force-dynamic";
  * environment mechanism, and one place where a bad origin fails.
  */
 export default function MarketsPage() {
-  return <MarketsWorkspace apiBaseUrl={resolveApiBaseUrlV1(process.env)} networkId={resolveWalletNetworkV1(process.env)} />;
+  const networkId = resolveWalletNetworkV1(process.env);
+  const contractAddress = resolveMarketContractAddressV1(process.env, networkId);
+  return (
+    <MarketsWorkspace
+      apiBaseUrl={resolveApiBaseUrlV1(process.env)}
+      networkId={networkId}
+      {...(contractAddress === undefined ? {} : { contractAddress })}
+    />
+  );
 }

@@ -53,13 +53,30 @@ describe("OrderHistory", () => {
     expect(JSON.stringify(requests[0]?.headers)).toContain("Bearer");
   });
 
-  it("says plainly that a pending order will not advance", async () => {
+  it("explains that a pending order waits for the admission worker", async () => {
     stub({ orders: [order()] });
     render(<OrderHistory api={api()} session={SESSION} />);
 
     await waitFor(() => {
-      expect(screen.getByText(/nothing in this system submits an\s+admission transaction/u)).toBeTruthy();
+      expect(screen.getByText(/waiting for the admission worker/u)).toBeTruthy();
     });
+  });
+
+  it("shows the finalized on-chain admission tx and links the contract on the explorer", async () => {
+    const txId = "00" + "cd".repeat(32);
+    stub({ orders: [order({ admissionSubmittedTxId: txId })] });
+    render(<OrderHistory
+      api={api()}
+      session={SESSION}
+      networkId="preview"
+      contractAddress={"5f".repeat(32)}
+    />);
+
+    await waitFor(() => { expect(screen.getByText("On-chain tx")).toBeTruthy(); });
+    expect(screen.getByText(txId)).toBeTruthy();
+    const link = screen.getByRole("link", { name: /View contract on Midnight explorer/u });
+    expect(link.getAttribute("href")).toBe(`https://preview.midnightexplorer.com/contracts/0x${"5f".repeat(32)}`);
+    expect(screen.queryByText(/waiting for the admission worker/u)).toBeNull();
   });
 
   it("shows admission evidence once an order is accepted", async () => {

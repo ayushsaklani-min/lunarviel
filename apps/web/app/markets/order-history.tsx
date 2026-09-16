@@ -48,10 +48,15 @@ export function OrderHistory({
   api,
   session,
   reloadToken,
+  networkId,
+  contractAddress,
 }: {
   api: LunarveilApiClientV1 | undefined;
   session: { readonly token: string } | undefined;
   reloadToken?: number;
+  networkId?: string;
+  /** Public market contract address, for explorer links. */
+  contractAddress?: string;
 }) {
   const [state, setState] = useState<LoadState>({ phase: "loading" });
 
@@ -69,6 +74,21 @@ export function OrderHistory({
   }, [api, session]);
 
   useEffect(() => load(), [load, reloadToken]);
+
+  // While an order waits for the admission worker, refresh quietly so its
+  // finalized transaction appears without a manual reload.
+  const awaitingAdmission = state.phase === "ready" && state.orders.some(order =>
+    order.state === "PENDING_CHAIN" && order.admissionSubmittedTxId === undefined);
+  useEffect(() => {
+    if (!awaitingAdmission || api === undefined || session === undefined) return;
+    const controller = new AbortController();
+    const timer = setInterval(() => {
+      void api.listMyOrders({ bearerToken: session.token }, { signal: controller.signal })
+        .then(orders => { setState({ phase: "ready", orders }); })
+        .catch(() => { /* keep the last good list; the next tick retries */ });
+    }, 15_000);
+    return () => { clearInterval(timer); controller.abort(); };
+  }, [api, awaitingAdmission, session]);
 
   if (session === undefined) {
     return (
@@ -132,6 +152,12 @@ export function OrderHistory({
                           <dd><code>{shortenHashV1(order.chainAdmissionTxId)}</code></dd>
                         </div>
                       )}
+                      {order.admissionSubmittedTxId !== undefined && (
+                        <div>
+                          <dt>On-chain tx</dt>
+                          <dd><code className="history-txid">{order.admissionSubmittedTxId}</code></dd>
+                        </div>
+                      )}
                       {order.leafIndex !== undefined && (
                         <div><dt>Leaf</dt><dd>{order.leafIndex}</dd></div>
                       )}
@@ -140,10 +166,24 @@ export function OrderHistory({
                       )}
                     </dl>
 
-                    {order.state === "PENDING_CHAIN" && (
+                    {order.state === "PENDING_CHAIN" && order.admissionSubmittedTxId === undefined && (
                       <p className="history-note">
-                        This will not advance yet: nothing in this system submits an
-                        admission transaction, so the order stays here indefinitely.
+                        Encrypted and stored — waiting for the admission worker to prove and
+                        submit its commitment on chain. This refreshes automatically.
+                      </p>
+                    )}
+
+                    {order.admissionSubmittedTxId !== undefined && networkId === "preview"
+                      && contractAddress !== undefined && (
+                      <p className="history-note">
+                        Commitment admitted on Midnight Preview.{" "}
+                        <a
+                          href={`https://preview.midnightexplorer.com/contracts/0x${contractAddress}`}
+                          target="_blank"
+                          rel="noreferrer"
+                        >
+                          View contract on Midnight explorer
+                        </a>
                       </p>
                     )}
                   </li>

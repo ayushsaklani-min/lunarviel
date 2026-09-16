@@ -32,6 +32,12 @@ export interface TraderOrderRecordV1 {
   readonly acceptedAtMs: bigint | undefined;
   readonly chainAdmissionTxId: string | undefined;
   readonly leafIndex: string | undefined;
+  /**
+   * Public tx id recorded by the admission worker once its transaction
+   * finalized with SucceedEntirely. Reconciliation may not have run yet, so
+   * this is reported separately from `chainAdmissionTxId`.
+   */
+  readonly admissionSubmittedTxId?: string | undefined;
 }
 
 export class TraderOrderHistoryError extends Error {
@@ -52,6 +58,7 @@ interface TraderOrderRow extends Record<string, unknown> {
   readonly acceptedAtMs: string | null;
   readonly chainAdmissionTxId: string | null;
   readonly leafIndex: string | null;
+  readonly admissionSubmittedTxId?: string | null;
 }
 
 /**
@@ -71,7 +78,9 @@ const SELECT_TRADER_ORDERS = `
     CASE WHEN "acceptedAt" IS NULL THEN NULL
       ELSE (EXTRACT(EPOCH FROM "acceptedAt") * 1000)::bigint::text END AS "acceptedAtMs",
     "chainAdmissionTxId",
-    "leafIndex"
+    "leafIndex",
+    (SELECT s."publicTxId" FROM "OrderAdmissionSubmission" s
+      WHERE s."orderId" = "OrderEnvelope"."id" AND s."state" = 'SUBMITTED') AS "admissionSubmittedTxId"
   FROM "OrderEnvelope"
   WHERE "traderTagHash" = $1
   ORDER BY "createdAt" DESC, "id" DESC
@@ -126,6 +135,7 @@ export class PostgresTraderOrderHistoryRepositoryV1 {
         || (row.acceptedAtMs !== null && (typeof row.acceptedAtMs !== 'string' || !/^-?[0-9]+$/u.test(row.acceptedAtMs)))
         || (row.chainAdmissionTxId !== null && (typeof row.chainAdmissionTxId !== 'string' || !TX_ID_PATTERN.test(row.chainAdmissionTxId)))
         || (row.leafIndex !== null && (typeof row.leafIndex !== 'string' || !LEAF_INDEX_PATTERN.test(row.leafIndex)))
+        || (row.admissionSubmittedTxId != null && (typeof row.admissionSubmittedTxId !== 'string' || !TX_ID_PATTERN.test(row.admissionSubmittedTxId)))
       ) {
         throw new TraderOrderHistoryError('INVALID_ROW');
       }
@@ -141,6 +151,7 @@ export class PostgresTraderOrderHistoryRepositoryV1 {
         acceptedAtMs: row.acceptedAtMs === null ? undefined : BigInt(row.acceptedAtMs),
         chainAdmissionTxId: row.chainAdmissionTxId ?? undefined,
         leafIndex: row.leafIndex ?? undefined,
+        admissionSubmittedTxId: row.admissionSubmittedTxId ?? undefined,
       };
     });
   }

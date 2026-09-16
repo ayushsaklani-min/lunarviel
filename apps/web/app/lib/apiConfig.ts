@@ -29,6 +29,20 @@ export function resolveWalletNetworkV1(env: Readonly<Record<string, string | und
   throw new ApiConfigError('INVALID_CHAIN_NETWORK');
 }
 
+/** Deployed M3 N=4 Preview contract (public deployment metadata, ADR-0046). */
+export const PREVIEW_MARKET_CONTRACT_ADDRESS_V1 =
+  '5f5b5b99f645ceec4bdca5df79fbec7cc83d60b5d78007d05a23aaaffb327d91';
+
+/** Public contract address for explorer links; never used to sign or submit. */
+export function resolveMarketContractAddressV1(
+  env: Readonly<Record<string, string | undefined>> = {},
+  networkId: string,
+): string | undefined {
+  const value = env.LUNARVEIL_MARKET_CONTRACT_ADDRESS?.trim().toLowerCase();
+  if (value !== undefined && value !== '') return /^[0-9a-f]{64}$/u.test(value) ? value : undefined;
+  return networkId === 'preview' ? PREVIEW_MARKET_CONTRACT_ADDRESS_V1 : undefined;
+}
+
 function isLoopback(hostname: string): boolean {
   return hostname === 'localhost' || hostname === '127.0.0.1' || hostname === '::1' || hostname === '[::1]';
 }

@@ -51,9 +51,12 @@ function Notice({ tone, children }: { tone: "info" | "warn" | "error"; children:
 export function MarketsWorkspace({
   apiBaseUrl,
   networkId = "undeployed",
+  contractAddress,
 }: {
   apiBaseUrl: string;
   networkId?: string;
+  /** Public market contract address, used only for explorer links. */
+  contractAddress?: string;
 }) {
   const client = useMemo(() => {
     try {
@@ -218,14 +221,20 @@ export function MarketsWorkspace({
         />
       )}
 
-      <OrderHistory api={client} session={wallet?.session} reloadToken={ordersVersion} />
+      <OrderHistory
+        api={client}
+        session={wallet?.session}
+        reloadToken={ordersVersion}
+        networkId={networkId}
+        {...(contractAddress === undefined ? {} : { contractAddress })}
+      />
 
       <footer className="workspace-footnote">
         <p>
           <strong>What this page does not yet claim.</strong> Settlement is a later
-          slice. An order submitted here is encrypted, signed and stored, but chain
-          admission cannot complete: nothing submits an admission transaction, so it
-          stays <code>PENDING_CHAIN</code> indefinitely. Epoch state shown here is the
+          slice. An order submitted here is encrypted, signed and stored; an
+          operator-run admission worker then submits its public commitment to the
+          Midnight Preview contract and records the finalized transaction. Epoch state shown here is the
           database workflow record, not the chain. The matcher can decrypt submitted
           orders — V1 hides them from the public chain and other traders, not from
           the matcher.

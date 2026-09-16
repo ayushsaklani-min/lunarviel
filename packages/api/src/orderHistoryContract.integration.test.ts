@@ -87,7 +87,7 @@ interface HarnessV1 {
   readonly requestedTags: string[];
 }
 
-async function harness(): Promise<HarnessV1> {
+async function harness(extra: Partial<TraderOrderRecordV1> = {}): Promise<HarnessV1> {
   const requestedTags: string[] = [];
   const traderTags = new HmacTraderSessionBindingVerifierV1(TRADER_TAG_KEY);
   const sessions = new InMemorySessionChallengeService({
@@ -102,7 +102,7 @@ async function harness(): Promise<HarnessV1> {
   const repository: TraderOrderHistoryRepository = {
     async listForTrader(input) {
       requestedTags.push(input.traderTagHash);
-      return [order(input.traderTagHash, 1), order(input.traderTagHash, 2)].slice(0, input.limit);
+      return [{ ...order(input.traderTagHash, 1), ...extra }, order(input.traderTagHash, 2)].slice(0, input.limit);
     },
   };
 
@@ -147,6 +147,14 @@ async function openSession(client: LunarveilApiClientV1, user: ReturnType<typeof
 }
 
 describe('trader order history over real HTTP', () => {
+  it('carries the finalized admission submission tx id to the client', async () => {
+    const txId = '00' + 'ab'.repeat(32);
+    const { client } = await harness({ admissionSubmittedTxId: txId });
+    const session = await openSession(client, wallet());
+    const orders = await client.listMyOrders({ bearerToken: session.token });
+    expect(orders[0]?.admissionSubmittedTxId).toBe(txId);
+  });
+
   it("returns the caller's own orders, scoped to the session's derived tag", async () => {
     const { client, requestedTags } = await harness();
     const user = wallet();

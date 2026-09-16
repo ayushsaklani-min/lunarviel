@@ -176,5 +176,7 @@ export interface TraderOrderV1 {
   readonly createdAtMs: string;
   readonly acceptedAtMs?: string;
   readonly chainAdmissionTxId?: string;
+  /** Public tx id of the admission worker's finalized SucceedEntirely transaction. */
+  readonly admissionSubmittedTxId?: string;
   readonly leafIndex?: string;
 }
