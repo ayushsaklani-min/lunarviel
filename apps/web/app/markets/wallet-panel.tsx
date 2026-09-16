@@ -23,6 +23,16 @@ function failureCode(error: unknown): string {
   if (error instanceof Error && /Receiving end does not exist|Extension context invalidated/u.test(error.message)) {
     return "WALLET_EXTENSION_UNAVAILABLE";
   }
+  // Lace throws this when its approval window closes before the user answers
+  // (observed on Preview). The request cannot complete; retrying reopens it.
+  if (error instanceof Error && (error.name === "RemoteApiShutdownError" || /was shutdown: object can no longer be used/u.test(error.message))) {
+    return "WALLET_APPROVAL_CLOSED";
+  }
+  const connectorCode = (error as { type?: unknown; code?: unknown } | null)?.type === "DAppConnectorAPIError"
+    ? (error as { code?: unknown }).code
+    : undefined;
+  if (connectorCode === "Rejected" || connectorCode === "PermissionRejected") return "WALLET_REJECTED";
+  if (connectorCode === "Disconnected") return "WALLET_DISCONNECTED";
   if (error instanceof WalletConnectorError) return error.code;
   if (error instanceof WalletSignatureError) return error.code;
   if (isLunarveilApiError(error)) {
@@ -157,6 +167,9 @@ export function WalletPanel({
           <span>Reported <code>{failure}</code>. No session was opened.</span>
           {failure === "WALLET_EXTENSION_UNAVAILABLE" && <span> Open Lace, unlock it, and reload this tab. If Lace was updated, restart the browser.</span>}
           {failure === "NETWORK_MISMATCH" && <span> Select {networkId} in Lace and reconnect.</span>}
+          {failure === "WALLET_APPROVAL_CLOSED" && <span> The Lace approval window closed before it was answered. Unlock Lace, click the wallet again and keep the popup open until you approve.</span>}
+          {failure === "WALLET_REJECTED" && <span> The request was declined in Lace. Click the wallet again to retry.</span>}
+          {failure === "WALLET_DISCONNECTED" && <span> Lace lost the connection. Unlock Lace, check it is on {networkId}, and click the wallet again.</span>}
         </p>
       )}
 

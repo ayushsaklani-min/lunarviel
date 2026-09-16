@@ -1,0 +1,20 @@
+name: keep-warm
+
+# Free-tier Render services sleep after ~15 idle minutes and take ~50 s to wake.
+# Pinging public health endpoints keeps the judged demo responsive.
+on:
+  schedule:
+    - cron: "*/10 * * * *"
+  workflow_dispatch:
+
+permissions: {}
+
+jobs:
+  ping:
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Ping API and proof server
+        run: |
+          curl -fsS -m 120 -o /dev/null https://lunarveil-api.onrender.com/healthz || echo "api ping failed"
+          curl -fsS -m 120 -o /dev/null https://lunarveil-proof-server.onrender.com/health || echo "prover ping failed"

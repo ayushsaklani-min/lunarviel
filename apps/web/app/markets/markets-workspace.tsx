@@ -42,6 +42,8 @@ function failureCode(error: unknown): string {
   return "UNEXPECTED_FAILURE";
 }
 
+const API_TIMEOUT_MS = 90_000;
+
 function Notice({ tone, children }: { tone: "info" | "warn" | "error"; children: React.ReactNode }) {
   return <p className={`workspace-notice workspace-notice-${tone}`}>{children}</p>;
 }
@@ -55,7 +57,9 @@ export function MarketsWorkspace({
 }) {
   const client = useMemo(() => {
     try {
-      return new LunarveilApiClientV1({ baseUrl: apiBaseUrl });
+      // A free-tier Render API sleeps when idle and needs ~50 s to wake. The
+      // client's 10 s default would report TIMEOUT for every first visit.
+      return new LunarveilApiClientV1({ baseUrl: apiBaseUrl, timeoutMs: API_TIMEOUT_MS });
     } catch {
       return undefined;
     }
@@ -147,7 +151,7 @@ export function MarketsWorkspace({
         <h2 id="markets-title">Available markets</h2>
 
         {markets.phase === "loading" && (
-          <p className="workspace-placeholder" role="status">Loading markets…</p>
+          <p className="workspace-placeholder" role="status">Loading markets… The backend may need up to a minute to wake up.</p>
         )}
 
         {markets.phase === "failed" && (

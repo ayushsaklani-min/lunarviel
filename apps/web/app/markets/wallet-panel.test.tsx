@@ -120,6 +120,26 @@ describe("WalletPanel", () => {
     expect(document.body.textContent).not.toContain("private-detail");
   });
 
+  it("reports a closed Lace approval window as retryable, observed from Lace on Preview", async () => {
+    const provider = fakeWallet();
+    const closed = Object.assign(new Error("Remote API with channel 'midnight-authenticator' was shutdown: object can no longer be used."), { name: "RemoteApiShutdownError" });
+    vi.spyOn(provider, "connect").mockRejectedValue(closed);
+    render(<WalletPanel api={api()} networkId="preview" registry={{ lace: provider }} />);
+    fireEvent.click(screen.getByRole("button", { name: /Test Wallet/u }));
+    await waitFor(() => expect(screen.getByText("WALLET_APPROVAL_CLOSED")).toBeTruthy());
+    expect(document.body.textContent).not.toContain("midnight-authenticator");
+  });
+
+  it("reports a connector rejection by its public code", async () => {
+    const provider = fakeWallet();
+    const rejected = Object.assign(new Error("user said no"), { type: "DAppConnectorAPIError", code: "Rejected", reason: "private-detail" });
+    vi.spyOn(provider, "connect").mockRejectedValue(rejected);
+    render(<WalletPanel api={api()} networkId="preview" registry={{ lace: provider }} />);
+    fireEvent.click(screen.getByRole("button", { name: /Test Wallet/u }));
+    await waitFor(() => expect(screen.getByText("WALLET_REJECTED")).toBeTruthy());
+    expect(document.body.textContent).not.toContain("private-detail");
+  });
+
   it("says plainly when no compatible wallet is installed", () => {
     render(<WalletPanel api={api()} networkId={NETWORK_ID} registry={{}} />);
     expect(screen.getByText(/No compatible Midnight wallet detected/u)).toBeTruthy();

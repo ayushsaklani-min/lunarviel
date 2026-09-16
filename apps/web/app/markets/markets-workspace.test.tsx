@@ -68,7 +68,7 @@ describe("MarketsWorkspace", () => {
 
     render(<MarketsWorkspace apiBaseUrl={API_BASE_URL} />);
 
-    expect(screen.getByText("Loading markets…")).toBeTruthy();
+    expect(screen.getByText(/^Loading markets…/)).toBeTruthy();
     await waitFor(() => { expect(screen.getByText("NIGHT / USDCX")).toBeTruthy(); });
     expect(screen.getByText("Accepting orders")).toBeTruthy();
     // Atomic integers are grouped, never rounded.
