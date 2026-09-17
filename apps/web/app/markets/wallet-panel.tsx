@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 
 import type { LunarveilApiClientV1, SessionV1 } from "@lunarveil/api-client";
 import type { ConnectedAPI } from "@midnight-ntwrk/dapp-connector-api";
@@ -17,7 +17,17 @@ export interface WalletSessionStateV1 {
   readonly verifyingKey: string;
 }
 
+/** After this long without an answer, Lace most likely did not open its window. */
+export const WALLET_SLOW_HINT_MS = 3_000;
+/** A wallet request left unanswered this long is abandoned so the user can retry. */
+export const WALLET_APPROVAL_TIMEOUT_MS = 120_000;
+
+class WalletApprovalTimeoutError extends Error {
+  constructor() { super("WALLET_APPROVAL_TIMEOUT"); this.name = "WalletApprovalTimeoutError"; }
+}
+
 function failureCode(error: unknown): string {
+  if (error instanceof WalletApprovalTimeoutError) return "WALLET_APPROVAL_TIMEOUT";
   // Recognize the extension transport failure without displaying arbitrary
   // extension messages (which may contain private information).
   if (error instanceof Error && /Receiving end does not exist|Extension context invalidated/u.test(error.message)) {
@@ -64,6 +74,10 @@ export function WalletPanel({
   const [busyWalletId, setBusyWalletId] = useState<string | undefined>(undefined);
   const [state, setState] = useState<WalletSessionStateV1 | undefined>(undefined);
   const [failure, setFailure] = useState<string | undefined>(undefined);
+  const [slowWallet, setSlowWallet] = useState(false);
+  // Each click starts a numbered attempt; a cancelled or timed-out attempt's
+  // late result is ignored rather than opening a session behind the user's back.
+  const attempt = useRef(0);
 
   const discover = useCallback(() => {
     const current = registry ?? (globalThis as { midnight?: WalletRegistry }).midnight;
@@ -81,32 +95,57 @@ export function WalletPanel({
     };
   }, [discover]);
 
+  useEffect(() => {
+    if (busyWalletId === undefined) {
+      setSlowWallet(false);
+      return;
+    }
+    const timer = setTimeout(() => { setSlowWallet(true); }, WALLET_SLOW_HINT_MS);
+    return () => { clearTimeout(timer); };
+  }, [busyWalletId]);
+
   const connect = useCallback(async (walletId: string) => {
     const resolvedRegistry = registry ?? (globalThis as { midnight?: WalletRegistry }).midnight;
     if (api === undefined || resolvedRegistry === undefined) {
       setFailure("WALLET_UNAVAILABLE");
       return;
     }
+    const current = ++attempt.current;
     setBusyWalletId(walletId);
     setFailure(undefined);
+    let timer: ReturnType<typeof setTimeout> | undefined;
     try {
-      const result = await openWalletSessionV1({
-        registry: resolvedRegistry,
-        walletId,
-        networkId,
-        domain: globalThis.location?.host ?? "localhost",
-        api,
-      });
+      const result = await Promise.race([
+        openWalletSessionV1({
+          registry: resolvedRegistry,
+          walletId,
+          networkId,
+          domain: globalThis.location?.host ?? "localhost",
+          api,
+        }),
+        new Promise<never>((_, reject) => {
+          timer = setTimeout(() => { reject(new WalletApprovalTimeoutError()); }, WALLET_APPROVAL_TIMEOUT_MS);
+        }),
+      ]);
+      if (current !== attempt.current) return;
       setState(result);
       onSession?.(result);
     } catch (error) {
+      if (current !== attempt.current) return;
       setFailure(failureCode(error));
       setState(undefined);
       onSession?.(undefined);
     } finally {
-      setBusyWalletId(undefined);
+      clearTimeout(timer);
+      if (current === attempt.current) setBusyWalletId(undefined);
     }
   }, [api, networkId, onSession, registry]);
+
+  const cancel = useCallback(() => {
+    attempt.current += 1;
+    setBusyWalletId(undefined);
+    setFailure(undefined);
+  }, []);
 
   const disconnect = useCallback(() => {
     // Dropping the reference is the whole logout: nothing was persisted.
@@ -159,7 +198,17 @@ export function WalletPanel({
         </ul>
       )}
 
-      {state === undefined && <button className="workspace-refresh" type="button" onClick={discover}>Retry wallet detection</button>}
+      {busyWalletId !== undefined && (
+        <div className="wallet-waiting" role="status">
+          <p>
+            Waiting for Lace. Approve the request in the Lace window
+            {slowWallet && <strong> — Lace didn't open a window? Click the Lace icon in your browser toolbar to see and approve the pending request.</strong>}
+          </p>
+          <button className="workspace-refresh" type="button" onClick={cancel}>Cancel request</button>
+        </div>
+      )}
+
+      {state === undefined && busyWalletId === undefined && <button className="workspace-refresh" type="button" onClick={discover}>Retry wallet detection</button>}
 
       {failure !== undefined && (
         <p className="workspace-notice workspace-notice-error">
@@ -170,6 +219,7 @@ export function WalletPanel({
           {failure === "WALLET_APPROVAL_CLOSED" && <span> The Lace approval window closed before it was answered. Unlock Lace, click the wallet again and keep the popup open until you approve.</span>}
           {failure === "WALLET_REJECTED" && <span> The request was declined in Lace. Click the wallet again to retry.</span>}
           {failure === "WALLET_DISCONNECTED" && <span> Lace lost the connection. Unlock Lace, check it is on {networkId}, and click the wallet again.</span>}
+          {failure === "WALLET_APPROVAL_TIMEOUT" && <span> Lace did not answer in time. Open Lace from the browser toolbar, unlock it, then click the wallet again.</span>}
         </p>
       )}
 

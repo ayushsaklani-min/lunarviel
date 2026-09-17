@@ -64,6 +64,11 @@ export async function openWalletSessionV1(input: {
   readonly signal?: AbortSignal;
 }): Promise<WalletSessionResultV1> {
   const wallet = await connectSelectedWallet(input.registry, input.walletId, input.networkId);
+  // Connector 4.0.1 lets the wallet ask for these permissions once, up front,
+  // instead of interrupting each later call. Optional for older wallets.
+  if (typeof wallet.hintUsage === "function") {
+    await wallet.hintUsage(["getUnshieldedAddress", "signData"]);
+  }
   const { unshieldedAddress } = await wallet.getUnshieldedAddress();
   if (typeof unshieldedAddress !== "string" || unshieldedAddress.length === 0) {
     throw new Error("WALLET_ADDRESS_UNAVAILABLE");

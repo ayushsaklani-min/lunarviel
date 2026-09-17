@@ -140,6 +140,61 @@ describe("WalletPanel", () => {
     expect(document.body.textContent).not.toContain("private-detail");
   });
 
+  it("tells the user to open Lace from the toolbar when its approval window does not appear", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const provider = fakeWallet();
+      vi.spyOn(provider, "connect").mockImplementation(() => new Promise(() => undefined));
+      render(<WalletPanel api={api()} networkId="preview" registry={{ lace: provider }} />);
+      fireEvent.click(screen.getByRole("button", { name: /Test Wallet/u }));
+      expect(screen.queryByText(/Click the Lace icon in your browser toolbar/u)).toBeNull();
+      await vi.advanceTimersByTimeAsync(3_500);
+      await waitFor(() => expect(screen.getByText(/Click the Lace icon in your browser toolbar/u)).toBeTruthy());
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("lets the user cancel a wallet request that never resolves", async () => {
+    const provider = fakeWallet();
+    vi.spyOn(provider, "connect").mockImplementation(() => new Promise(() => undefined));
+    render(<WalletPanel api={api()} networkId="preview" registry={{ lace: provider }} />);
+    fireEvent.click(screen.getByRole("button", { name: /Test Wallet/u }));
+    fireEvent.click(await screen.findByRole("button", { name: "Cancel request" }));
+    await waitFor(() => expect(screen.getByRole("button", { name: /Test Wallet/u }).hasAttribute("disabled")).toBe(false));
+    expect(screen.queryByText("Session open")).toBeNull();
+    expect(screen.queryByText(/Wallet session failed/u)).toBeNull();
+  });
+
+  it("times out a wallet request with a retryable code", async () => {
+    vi.useFakeTimers({ shouldAdvanceTime: true });
+    try {
+      const provider = fakeWallet();
+      vi.spyOn(provider, "connect").mockImplementation(() => new Promise(() => undefined));
+      render(<WalletPanel api={api()} networkId="preview" registry={{ lace: provider }} />);
+      fireEvent.click(screen.getByRole("button", { name: /Test Wallet/u }));
+      await vi.advanceTimersByTimeAsync(120_500);
+      await waitFor(() => expect(screen.getByText("WALLET_APPROVAL_TIMEOUT")).toBeTruthy());
+    } finally {
+      vi.useRealTimers();
+    }
+  });
+
+  it("hints the methods it will use right after connecting", async () => {
+    stubApi({
+      "/v1/sessions/challenges": { body: challenge },
+      "/v1/sessions/verify": { body: session },
+    });
+    const provider = fakeWallet();
+    const hintUsage = vi.fn(async () => undefined);
+    const connect = provider.connect.bind(provider);
+    vi.spyOn(provider, "connect").mockImplementation(async (networkId: string) => ({ ...(await connect(networkId)), hintUsage }));
+    render(<WalletPanel api={api()} networkId={NETWORK_ID} registry={{ lace: provider }} />);
+    fireEvent.click(screen.getByRole("button", { name: /Test Wallet/u }));
+    await waitFor(() => expect(screen.getByText("Session open")).toBeTruthy());
+    expect(hintUsage).toHaveBeenCalledWith(["getUnshieldedAddress", "signData"]);
+  });
+
   it("says plainly when no compatible wallet is installed", () => {
     render(<WalletPanel api={api()} networkId={NETWORK_ID} registry={{}} />);
     expect(screen.getByText(/No compatible Midnight wallet detected/u)).toBeTruthy();

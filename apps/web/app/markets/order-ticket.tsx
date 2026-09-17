@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useMemo, useState } from "react";
+import { useCallback, useEffect, useMemo, useState } from "react";
 
 import {
   buildOrderSigningMessageV1,
@@ -82,6 +82,17 @@ export function OrderTicket({
   const [busy, setBusy] = useState(false);
   const [failure, setFailure] = useState<string | undefined>(undefined);
   const [accepted, setAccepted] = useState<OrderSubmissionV1 | undefined>(undefined);
+  const [slowWallet, setSlowWallet] = useState(false);
+
+  // Lace does not always open its signing window by itself.
+  useEffect(() => {
+    if (!busy) {
+      setSlowWallet(false);
+      return;
+    }
+    const timer = setTimeout(() => { setSlowWallet(true); }, 3_000);
+    return () => { clearTimeout(timer); };
+  }, [busy]);
 
   const problems = useMemo(
     () => validateOrderDraftV1(draft, market, epoch),
@@ -217,6 +228,12 @@ export function OrderTicket({
           <button className="ticket-submit" type="submit" disabled={!ready || busy}>
             {busy ? "Encrypting and signing…" : "Encrypt and submit"}
           </button>
+          {busy && slowWallet && (
+            <p className="wallet-waiting" role="status">
+              <strong>Approve the signature in Lace.</strong>{" "}
+              If no Lace window opened, click the Lace icon in your browser toolbar.
+            </p>
+          )}
         </form>
       )}
 
