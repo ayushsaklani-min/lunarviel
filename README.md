@@ -354,6 +354,37 @@ LUNARVEIL_API_BASE_URL=https://lunarveil-api.onrender.com
 LUNARVEIL_CHAIN_NETWORK=preview
 ```
 
+### One-command prototype demo
+
+Runs the whole lifecycle locally — encrypted order, wallet signature,
+admission, deterministic batch clearing, verification, fills — against a
+clearly labelled **development-only simulated chain**. Needs PostgreSQL 16
+server binaries (or `LUNARVEIL_DEMO_DATABASE_URL`), `openssl` and `curl`.
+
+```sh
+npm ci
+npm run demo                  # then open http://127.0.0.1:3000/markets
+npm run demo -- --reset       # start from an empty database
+npm run demo -- --malicious   # also show a forged matcher solution rejected
+```
+
+1. Connect the built-in **demo wallet** (real Midnight ledger key, no assets, no extension).
+2. Place e.g. BUY 10 @ 101. It is encrypted and signed in the browser and admitted within seconds.
+3. *Disconnect* → *New demo trader* → connect, then place SELL 6 @ 100.
+4. When the epoch closes (60 s, `DEMO_EPOCH_SECONDS`), both orders fill at the
+   clearing price; *Recent batches* shows price, volume and verification.
+
+| Real code path | Simulated in demo mode |
+| --- | --- |
+| Browser envelope encryption, wallet signatures verified with ledger keys | Chain admission transaction |
+| Compact-compatible commitments recomputed by the matcher | Chain-read order-set root |
+| Deterministic batch auction (`clearBatch`) | ZK proof (replaced by independent re-verification) |
+| Ciphertext-only storage, allowlisted API | Settlement transfer |
+
+Every simulated artifact is prefixed `simulated:`; the simulator refuses to
+start outside `LUNARVEIL_ENV=development`. Logs: `.demo/*.log`. Integration
+tests against a disposable PostgreSQL: `npm run test:integration`.
+
 ### API and database
 
 Use a dedicated PostgreSQL 16 database and inject variables from your shell or a secret manager. `.env.example` lists the names.

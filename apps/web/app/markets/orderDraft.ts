@@ -42,7 +42,16 @@ export type OrderDraftProblemV1 =
   | "M3_UINT64_BOUND"
   | "MARKET_NOT_ACCEPTING_ORDERS"
   | "EPOCH_NOT_OPEN"
-  | "EPOCH_FULL";
+  | "EPOCH_FULL"
+  | "EPOCH_CLOSING";
+
+/**
+ * Admission must land before the epoch deadline (the M3b contract rejects it
+ * at or after `epochCloseAt`). An order signed in the last few seconds would
+ * most likely miss it and expire unadmitted, so the ticket stops accepting
+ * orders slightly early.
+ */
+export const ADMISSION_CUTOFF_MS_V1 = 5_000n;
 
 const DECIMAL_PATTERN = /^[0-9]+$/u;
 const UINT64_MAX = (1n << 64n) - 1n;
@@ -65,6 +74,7 @@ export function validateOrderDraftV1(
   draft: OrderDraftV1,
   market: MarketV1,
   epoch: EpochV1 | undefined,
+  nowMs?: bigint,
 ): readonly OrderDraftProblemV1[] {
   const problems: OrderDraftProblemV1[] = [];
 
@@ -93,6 +103,8 @@ export function validateOrderDraftV1(
   if (market.status !== "ACTIVE") problems.push("MARKET_NOT_ACCEPTING_ORDERS");
   if (epoch === undefined || epoch.state !== "OPEN") problems.push("EPOCH_NOT_OPEN");
   else if (epoch.orderCount >= epoch.maxOrders) problems.push("EPOCH_FULL");
+  else if (nowMs !== undefined && /^[0-9]+$/u.test(epoch.scheduledCloseAtMs)
+    && nowMs >= BigInt(epoch.scheduledCloseAtMs) - ADMISSION_CUTOFF_MS_V1) problems.push("EPOCH_CLOSING");
 
   return problems;
 }

@@ -31,6 +31,7 @@ const PROBLEM_TEXT: Readonly<Record<string, string>> = {
   MARKET_NOT_ACCEPTING_ORDERS: "This market is not accepting orders.",
   EPOCH_NOT_OPEN: "This market has no open epoch.",
   EPOCH_FULL: "This epoch is full.",
+  EPOCH_CLOSING: "This epoch is closing. The next one opens in a moment.",
 };
 
 const EMPTY_DRAFT: OrderDraftV1 = {
@@ -97,8 +98,8 @@ export function OrderTicket({
   }, [busy]);
 
   const problems = useMemo(
-    () => validateOrderDraftV1(draft, market, epoch),
-    [draft, epoch, market],
+    () => validateOrderDraftV1(draft, market, epoch, nowMs),
+    [draft, epoch, market, nowMs],
   );
   const ready = problems.length === 0 && session !== undefined && wallet !== undefined && api !== undefined;
 

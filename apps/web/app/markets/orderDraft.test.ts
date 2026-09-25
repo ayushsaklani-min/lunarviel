@@ -100,6 +100,10 @@ describe("validateOrderDraftV1", () => {
       .toContain("EPOCH_NOT_OPEN");
     expect(validateOrderDraftV1(draft, market, undefined)).toContain("EPOCH_NOT_OPEN");
     expect(validateOrderDraftV1(draft, market, { ...epoch, orderCount: 4 })).toContain("EPOCH_FULL");
+    const closeAt = BigInt(epoch.scheduledCloseAtMs);
+    expect(validateOrderDraftV1(draft, market, epoch, closeAt - 10_000n)).toEqual([]);
+    expect(validateOrderDraftV1(draft, market, epoch, closeAt - 4_000n)).toContain("EPOCH_CLOSING");
+    expect(validateOrderDraftV1(draft, market, epoch, closeAt + 1n)).toContain("EPOCH_CLOSING");
   });
 });
 

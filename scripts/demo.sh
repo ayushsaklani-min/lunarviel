@@ -116,7 +116,6 @@ DATABASE_URL=$database_url CHECKPOINT_DISABLE=1 PRISMA_HIDE_UPDATE_MESSAGE=1 \
   node packages/db/node_modules/prisma/build/index.js migrate deploy \
   --schema packages/db/prisma/schema.prisma >"$state_dir/migrate.log" 2>&1 \
   || { echo "Migration failed; see .demo/migrate.log" >&2; exit 1; }
-DATABASE_URL=$database_url node scripts/demo-seed.mjs
 
 export LUNARVEIL_ENV=development
 export LUNARVEIL_DATABASE_URL=$database_url
@@ -125,6 +124,9 @@ echo "Building the web app…"
 (cd apps/web && npm run build >"$state_dir/web-build.log" 2>&1) || {
   echo "Web build failed; see .demo/web-build.log" >&2; exit 1;
 }
+
+# Seed after the build, so the first epoch's clock starts when the services do.
+DATABASE_URL=$database_url node scripts/demo-seed.mjs
 
 echo "Starting API on :$api_port, matcher (simulated chain) and web on :$web_port…"
 LUNARVEIL_API_HOST=127.0.0.1 LUNARVEIL_API_PORT=$api_port \
