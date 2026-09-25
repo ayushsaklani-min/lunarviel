@@ -70,3 +70,58 @@ export async function ownerSecretForCancellationV1(commitment: string): Promise<
     return new Uint8Array(clear);
   } finally { db.close(); }
 }
+
+/**
+ * What the owner typed, kept only in this browser so their own history can
+ * say "Buy 10 @ 101" next to a fill. Encrypted under the same non-extractable
+ * vault key as the owner secret; the server never receives it in plaintext.
+ */
+export interface OwnerOrderSummaryV1 {
+  readonly side: "BUY" | "SELL";
+  readonly quantityLots: string;
+  readonly limitPriceTicks: string;
+}
+
+const SUMMARY_PREFIX = "summary:";
+const memorySummaries = new Map<string, OwnerOrderSummaryV1>();
+
+function isSummary(value: unknown): value is OwnerOrderSummaryV1 {
+  if (typeof value !== "object" || value === null) return false;
+  const record = value as Record<string, unknown>;
+  return (record.side === "BUY" || record.side === "SELL")
+    && typeof record.quantityLots === "string" && /^[0-9]{1,20}$/u.test(record.quantityLots)
+    && typeof record.limitPriceTicks === "string" && /^[0-9]{1,20}$/u.test(record.limitPriceTicks);
+}
+
+export async function retainOwnerOrderSummaryV1(commitment: string, summary: OwnerOrderSummaryV1): Promise<void> {
+  const clear = { side: summary.side, quantityLots: summary.quantityLots, limitPriceTicks: summary.limitPriceTicks };
+  const db = await database();
+  if (db === undefined) { memorySummaries.set(commitment, clear); return; }
+  try {
+    const iv = crypto.getRandomValues(new Uint8Array(12));
+    const plaintext = new TextEncoder().encode(JSON.stringify(clear));
+    const ciphertext = await crypto.subtle.encrypt({ name: "AES-GCM", iv }, await vaultKey(db), arrayBuffer(plaintext));
+    plaintext.fill(0);
+    const transaction = db.transaction(SECRET_STORE, "readwrite");
+    transaction.objectStore(SECRET_STORE).put({ iv: Array.from(iv), ciphertext: Array.from(new Uint8Array(ciphertext)) }, SUMMARY_PREFIX + commitment);
+    await new Promise<void>((resolve, reject) => {
+      transaction.oncomplete = () => { resolve(); };
+      transaction.onerror = () => { reject(transaction.error ?? new Error("OWNER_VAULT_FAILED")); };
+    });
+  } finally { db.close(); }
+}
+
+/** Undefined when this browser did not place the order (or its vault was cleared). */
+export async function ownerOrderSummaryV1(commitment: string): Promise<OwnerOrderSummaryV1 | undefined> {
+  const db = await database();
+  if (db === undefined) return memorySummaries.get(commitment);
+  try {
+    const row = await request(db.transaction(SECRET_STORE, "readonly").objectStore(SECRET_STORE).get(SUMMARY_PREFIX + commitment)) as { iv: number[]; ciphertext: number[] } | undefined;
+    if (row === undefined) return undefined;
+    const clear = await crypto.subtle.decrypt({ name: "AES-GCM", iv: Uint8Array.from(row.iv) }, await vaultKey(db), arrayBuffer(Uint8Array.from(row.ciphertext)));
+    const parsed: unknown = JSON.parse(new TextDecoder().decode(clear));
+    return isSummary(parsed) ? parsed : undefined;
+  } catch {
+    return undefined;
+  } finally { db.close(); }
+}

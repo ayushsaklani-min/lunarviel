@@ -206,3 +206,31 @@ describe('LunarveilApiClientV1 — platform fetch binding', () => {
     }
   });
 });
+
+describe('LunarveilApiClientV1 — epoch results', () => {
+  const result = {
+    epochId: 'epoch-6', sequence: '6', state: 'FINALIZED', closedAtMs: '1800000060000',
+    orderCount: 3, matchedOrderCount: 2, clearingPriceTicks: '100', totalVolumeLots: '6',
+    rejectedSolutionCount: 0, proofReference: 'simulated:ab', settlementReference: 'simulated:cd', simulated: true,
+  };
+
+  it('reads recent results and drops unreviewed fields', async () => {
+    const { calls, fetchImpl } = stub({ results: [{ ...result, traderTagHash: 'aa'.repeat(32) }] });
+    expect(await client(fetchImpl).listEpochResults('market-1', { limit: 5 })).toEqual([result]);
+    expect(calls[0]?.url).toBe(`${BASE_URL}/v1/markets/market-1/results?limit=5`);
+  });
+
+  it('keeps an untraded epoch without a clearing price', async () => {
+    const { clearingPriceTicks: _omitted, ...untraded } = { ...result, totalVolumeLots: '0', matchedOrderCount: 0 };
+    const { fetchImpl } = stub({ results: [untraded] });
+    const [parsed] = await client(fetchImpl).listEpochResults('market-1');
+    expect(parsed?.clearingPriceTicks).toBeUndefined();
+  });
+
+  it('rejects malformed results rather than rendering them', async () => {
+    const { fetchImpl } = stub({ results: [{ ...result, clearingPriceTicks: '100.5' }] });
+    await expect(client(fetchImpl).listEpochResults('market-1')).rejects.toThrow(new LunarveilApiError('MALFORMED_RESPONSE'));
+    const missingFlag = stub({ results: [{ ...result, simulated: 'yes' }] });
+    await expect(client(missingFlag.fetchImpl).listEpochResults('market-1')).rejects.toThrow(new LunarveilApiError('MALFORMED_RESPONSE'));
+  });
+});

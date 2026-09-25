@@ -150,6 +150,21 @@ describe("MarketsWorkspace", () => {
     expect(screen.getByText(/operator-run admission worker/u)).toBeTruthy();
     expect(screen.getByText(/Settlement is a later/u)).toBeTruthy();
     expect(screen.getByText(/matcher can decrypt/u)).toBeTruthy();
+    expect(screen.queryByText(/Prototype demo/u)).toBeNull();
+  });
+
+  it("labels the simulated chain plainly in demo mode", async () => {
+    stubFetch({
+      "/v1/markets": { body: { markets: [market] } },
+      "/v1/system/status": { body: status },
+    });
+
+    render(<MarketsWorkspace apiBaseUrl={API_BASE_URL} demoMode />);
+
+    await waitFor(() => { expect(screen.getByText("NIGHT / USDCX")).toBeTruthy(); });
+    expect(screen.getByText(/Prototype demo · simulated chain\./u)).toBeTruthy();
+    expect(screen.getByText(/zero-knowledge proof \(replaced by an independent/u)).toBeTruthy();
+    expect(screen.getByText("Lunarveil demo wallet")).toBeTruthy();
   });
 
   it("fails closed on a misconfigured API origin without attempting a request", async () => {

@@ -76,3 +76,12 @@ export function resolveApiBaseUrlV1(
   }
   throw new ApiConfigError('INVALID_API_BASE_URL');
 }
+
+/**
+ * Whether this deployment talks to the development-only simulated chain
+ * (`LUNARVEIL_DEMO_MODE=true`). It enables the in-browser demo wallet and
+ * the copy that explains what is simulated. Anything but exactly `true` is off.
+ */
+export function resolveDemoModeV1(env: Readonly<Record<string, string | undefined>> = {}): boolean {
+  return env.LUNARVEIL_DEMO_MODE === 'true';
+}

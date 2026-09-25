@@ -5,11 +5,13 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import {
   LunarveilApiClientV1,
   isLunarveilApiError,
+  type EpochResultV1,
   type EpochV1,
   type MarketV1,
   type SystemStatusV1,
 } from "@lunarveil/api-client";
 
+import { EpochResults } from "./epoch-results";
 import { OrderHistory } from "./order-history";
 import { OrderTicket } from "./order-ticket";
 import { WalletPanel, type WalletSessionStateV1 } from "./wallet-panel";
@@ -48,15 +50,21 @@ function Notice({ tone, children }: { tone: "info" | "warn" | "error"; children:
   return <p className={`workspace-notice workspace-notice-${tone}`}>{children}</p>;
 }
 
+/** Epoch state and batch results refresh on this cadence while a market is selected. */
+const LIVE_REFRESH_MS = 5_000;
+
 export function MarketsWorkspace({
   apiBaseUrl,
   networkId = "undeployed",
   contractAddress,
+  demoMode = false,
 }: {
   apiBaseUrl: string;
   networkId?: string;
   /** Public market contract address, used only for explorer links. */
   contractAddress?: string;
+  /** The API runs against the development-only simulated chain. */
+  demoMode?: boolean;
 }) {
   const client = useMemo(() => {
     try {
@@ -74,9 +82,10 @@ export function MarketsWorkspace({
   const [epoch, setEpoch] = useState<LoadState<EpochV1> | undefined>(undefined);
   const [nowMs, setNowMs] = useState<bigint>(() => BigInt(Date.now()));
   const [wallet, setWallet] = useState<WalletSessionStateV1 | undefined>(undefined);
-  // Bumped after a successful submission so the history reloads once, rather
-  // than polling for progress an order cannot currently make.
+  // Bumped after a successful submission so the history reloads immediately.
   const [ordersVersion, setOrdersVersion] = useState(0);
+  const [results, setResults] = useState<readonly EpochResultV1[] | undefined>(undefined);
+  const [resultsFailure, setResultsFailure] = useState<string | undefined>(undefined);
 
   const loadCatalog = useCallback(() => {
     if (client === undefined) {
@@ -108,18 +117,48 @@ export function MarketsWorkspace({
 
   useEffect(() => loadCatalog(), [loadCatalog]);
 
+  // A single market is the common case; select it so the page is usable at once.
+  useEffect(() => {
+    if (selectedId === undefined && markets.phase === "ready" && markets.value.length === 1) {
+      setSelectedId(markets.value[0]!.id);
+    }
+  }, [markets, selectedId]);
+
   useEffect(() => {
     if (client === undefined || selectedId === undefined) return;
-    const controller = new AbortController();
+    let controller = new AbortController();
     setEpoch({ phase: "loading" });
-    void client.getMarketEpoch(selectedId, { signal: controller.signal })
-      .then(value => { setEpoch({ phase: "ready", value }); })
-      .catch((error: unknown) => {
-        if (controller.signal.aborted) return;
-        setEpoch({ phase: "failed", code: failureCode(error) });
-      });
-    return () => { controller.abort(); };
+    setResults(undefined);
+    setResultsFailure(undefined);
+
+    const refresh = (quiet: boolean) => {
+      controller.abort();
+      controller = new AbortController();
+      const signal = controller.signal;
+      void client.getMarketEpoch(selectedId, { signal })
+        .then(value => { setEpoch({ phase: "ready", value }); })
+        .catch((error: unknown) => {
+          if (signal.aborted || quiet) return;
+          setEpoch({ phase: "failed", code: failureCode(error) });
+        });
+      void client.listEpochResults(selectedId, { limit: 10 }, { signal })
+        .then(value => { setResults(value); setResultsFailure(undefined); })
+        .catch((error: unknown) => {
+          if (signal.aborted || quiet) return;
+          setResultsFailure(failureCode(error));
+        });
+    };
+
+    refresh(false);
+    // Epochs close and roll on a schedule; keep the view current without a reload.
+    const timer = setInterval(() => { refresh(true); }, LIVE_REFRESH_MS);
+    return () => { clearInterval(timer); controller.abort(); };
   }, [client, selectedId]);
+
+  const resultsByEpoch = useMemo(
+    () => new Map((results ?? []).map(result => [result.epochId, result])),
+    [results],
+  );
 
   useEffect(() => {
     const timer = setInterval(() => { setNowMs(BigInt(Date.now())); }, 1_000);
@@ -146,9 +185,19 @@ export function MarketsWorkspace({
         </button>
       </header>
 
+      {demoMode && (
+        <div className="demo-banner" role="note">
+          <strong>Prototype demo · simulated chain.</strong>{" "}
+          Orders are really encrypted in your browser, really signed and really matched by the
+          deterministic batch auction. What is simulated is the Midnight chain: admission, the
+          frozen order-set root, the zero-knowledge proof (replaced by an independent
+          re-verification of the solution) and settlement. Nothing here moves real assets.
+        </div>
+      )}
+
       <StatusStrip status={status} />
 
-      <WalletPanel api={client} networkId={networkId} onSession={setWallet} />
+      <WalletPanel api={client} networkId={networkId} onSession={setWallet} demoMode={demoMode} />
 
       <section className="workspace-panel" aria-labelledby="markets-title">
         <h2 id="markets-title">Available markets</h2>
@@ -217,6 +266,7 @@ export function MarketsWorkspace({
             ? undefined
             : { connected: wallet.connected, verifyingKey: wallet.verifyingKey }}
           nowMs={nowMs}
+          demoMode={demoMode}
           onSubmitted={() => { setOrdersVersion(version => version + 1); }}
         />
       )}
@@ -226,19 +276,33 @@ export function MarketsWorkspace({
         session={wallet?.session}
         reloadToken={ordersVersion}
         networkId={networkId}
-        {...(contractAddress === undefined ? {} : { contractAddress })}
+        results={resultsByEpoch}
+        {...(contractAddress === undefined || demoMode ? {} : { contractAddress })}
       />
 
+      {selected !== undefined && <EpochResults results={results} failure={resultsFailure} />}
+
       <footer className="workspace-footnote">
-        <p>
-          <strong>What this page does not yet claim.</strong> Settlement is a later
-          slice. An order submitted here is encrypted, signed and stored; an
-          operator-run admission worker then submits its public commitment to the
-          Midnight Preview contract and records the finalized transaction. Epoch state shown here is the
-          database workflow record, not the chain. The matcher can decrypt submitted
-          orders — V1 hides them from the public chain and other traders, not from
-          the matcher.
-        </p>
+        {demoMode ? (
+          <p>
+            <strong>What this demo does and does not claim.</strong> Encryption, wallet
+            signatures, commitments and batch matching are the real code paths. Chain
+            admission, the close root, the fair-clearing proof and settlement are
+            simulated by a development-only worker, and every artifact it invents is
+            labelled <code>simulated:</code>. The matcher can decrypt submitted orders —
+            V1 hides them from the public chain and other traders, not from the matcher.
+          </p>
+        ) : (
+          <p>
+            <strong>What this page does not yet claim.</strong> Settlement is a later
+            slice. An order submitted here is encrypted, signed and stored; an
+            operator-run admission worker then submits its public commitment to the
+            Midnight Preview contract and records the finalized transaction. Epoch state shown here is the
+            database workflow record, not the chain. The matcher can decrypt submitted
+            orders — V1 hides them from the public chain and other traders, not from
+            the matcher.
+          </p>
+        )}
       </footer>
     </main>
   );

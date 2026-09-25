@@ -13,6 +13,7 @@
   "dependencies": {
     "@lunarveil/api-client": "0.0.0",
     "@lunarveil/midnight": "^0.0.0",
+    "@midnight-ntwrk/ledger-v8": "^8.1.0",
     "@react-three/drei": "10.7.8",
     "@react-three/fiber": "9.7.0",
     "react": "19.2.6",

@@ -68,6 +68,7 @@ export function OrderTicket({
   session,
   wallet,
   nowMs,
+  demoMode = false,
   onSubmitted,
 }: {
   api: LunarveilApiClientV1 | undefined;
@@ -76,6 +77,7 @@ export function OrderTicket({
   session: { readonly token: string; readonly traderTagHash?: string } | undefined;
   wallet: { readonly connected: ConnectedAPI; readonly verifyingKey: string } | undefined;
   nowMs: bigint;
+  demoMode?: boolean;
   onSubmitted?: () => void;
 }) {
   const [draft, setDraft] = useState<OrderDraftV1>(EMPTY_DRAFT);
@@ -241,9 +243,10 @@ export function OrderTicket({
         <p className="workspace-notice workspace-notice-info">
           <strong>Order accepted for chain admission.</strong>{" "}
           <span>
-            State <code>{accepted.state}</code>. The admission worker now proves and
-            submits its commitment on Midnight; the transaction appears under
-            Your orders once it finalizes.
+            State <code>{accepted.state}</code>.{" "}
+            {demoMode
+              ? "The simulated chain admits it within a few seconds; it is matched when the epoch closes."
+              : "The admission worker now proves and submits its commitment on Midnight; the transaction appears under Your orders once it finalizes."}
           </span>
         </p>
       )}

@@ -51,3 +51,4 @@ IMPLEMENTATION_START_HERE.md
 apps/web/.output/
 apps/web/.vercel/
 .vercel/
+.demo/

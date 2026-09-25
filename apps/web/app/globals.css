@@ -1115,3 +1115,67 @@ a:focus-visible {
   line-height: 1.55;
   color: var(--muted);
 }
+
+/* Prototype demo (simulated chain) ------------------------------------ */
+
+.demo-banner {
+  margin: 0;
+  padding: 1rem 1.15rem;
+  border: 1px solid rgba(255, 210, 140, 0.4);
+  border-radius: 12px;
+  background: rgba(255, 210, 140, 0.05);
+  color: var(--muted);
+  line-height: 1.55;
+  font-size: 0.88rem;
+}
+.demo-banner strong { color: var(--ink); }
+
+.wallet-demo-note { margin: 1rem 0 0; font-size: 0.85rem; line-height: 1.6; color: var(--muted); }
+.wallet-demo-note strong { color: var(--ink); }
+.wallet-demo-reset { color: var(--blue); }
+
+.history-live-badge {
+  margin-left: auto;
+  padding: 0.15rem 0.6rem;
+  border: 1px solid var(--blue);
+  border-radius: 999px;
+  font-size: 0.7rem;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--blue);
+}
+
+.history-outcome { margin: 0; display: flex; flex-wrap: wrap; gap: 0.35rem 0.75rem; align-items: baseline; font-size: 0.9rem; }
+.history-side { font-variant-numeric: tabular-nums; font-weight: 500; }
+.history-side-buy { color: rgba(150, 230, 190, 0.95); }
+.history-side-sell { color: rgba(255, 170, 160, 0.95); }
+.history-clearing { color: var(--muted); font-size: 0.84rem; }
+
+.results-table-wrap { overflow-x: auto; }
+.results-table { width: 100%; border-collapse: collapse; font-size: 0.84rem; font-variant-numeric: tabular-nums; }
+.results-table th {
+  text-align: left;
+  font-size: 0.66rem;
+  font-weight: 500;
+  letter-spacing: 0.12em;
+  text-transform: uppercase;
+  color: var(--muted);
+  padding: 0 0.75rem 0.6rem 0;
+  border-bottom: 1px solid var(--line);
+  white-space: nowrap;
+}
+.results-table td { padding: 0.65rem 0.75rem 0.65rem 0; border-bottom: 1px solid var(--line); vertical-align: top; }
+.results-verification { display: flex; flex-wrap: wrap; gap: 0.35rem; align-items: center; }
+.results-badge {
+  display: inline-block;
+  padding: 0.12rem 0.55rem;
+  border: 1px solid var(--line);
+  border-radius: 999px;
+  font-size: 0.72rem;
+  white-space: nowrap;
+  color: var(--muted);
+}
+.results-badge-good { border-color: rgba(150, 230, 190, 0.6); color: var(--ink); }
+.results-badge-sim { border-color: rgba(255, 210, 140, 0.5); color: var(--ink); }
+.results-badge-bad { border-color: rgba(255, 150, 150, 0.6); color: rgba(255, 190, 190, 0.95); }
+.results-ref { font-size: 0.72rem; color: var(--muted); }

@@ -4,6 +4,7 @@ import { cleanup, render, screen, waitFor } from "@testing-library/react";
 import { LunarveilApiClientV1 } from "@lunarveil/api-client";
 
 import { OrderHistory } from "./order-history";
+import { retainOwnerOrderSummaryV1 } from "./ownerSecretVault";
 
 const SESSION = { token: "c2Vzc2lvbi10b2tlbg" };
 
@@ -118,7 +119,22 @@ describe("OrderHistory", () => {
     const text = document.body.textContent ?? "";
     expect(text).not.toContain("BUY");
     expect(text).not.toContain("SELL");
-    expect(screen.getByText(/exist only inside the ciphertext/u)).toBeTruthy();
+    expect(screen.getByText(/only inside the ciphertext the\s+matcher decrypts/u)).toBeTruthy();
+  });
+
+  it("shows this browser's own order next to the public clearing price", async () => {
+    const filled = order({ state: "FILLED" });
+    await retainOwnerOrderSummaryV1(filled.commitment, { side: "BUY", quantityLots: "10", limitPriceTicks: "101" });
+    stub({ orders: [filled] });
+    const results = new Map([[filled.epochId, {
+      epochId: filled.epochId, sequence: "7", state: "FINALIZED" as const, closedAtMs: "1800000060000",
+      orderCount: 2, matchedOrderCount: 2, clearingPriceTicks: "100", totalVolumeLots: "10",
+      rejectedSolutionCount: 0, simulated: true,
+    }]]);
+    render(<OrderHistory api={api()} session={SESSION} results={results} />);
+
+    await waitFor(() => { expect(screen.getByText("Buy 10 @ 101")).toBeTruthy(); });
+    expect(screen.getByText("filled at clearing price 100")).toBeTruthy();
   });
 
   it("distinguishes an empty history from a failure", async () => {

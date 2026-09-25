@@ -202,6 +202,8 @@ async function runPass(at: bigint, malicious = false): Promise<void> {
     expect(await orderRow(lowBid)).toMatchObject({ state: 'ACCEPTED', leafIndex: '2' });
     expect((await orderRow(forged)).state).toBe('REJECTED');
     expect((await orderRow(buyer)).chainAdmissionTxId).toMatch(/^simulated:[0-9a-f]{64}$/u);
+    const liveCount = (await inspector.query(`SELECT "orderCount" FROM "Epoch" WHERE "id" = 'market-sim-e1'`)).rows[0];
+    expect(liveCount.orderCount).toBe(3);
 
     // After the scheduled close: the whole lifecycle completes in one pass.
     const after = NOW + 61_000n;

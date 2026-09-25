@@ -8,6 +8,7 @@ import { isLunarveilApiError } from "@lunarveil/api-client";
 import { WalletConnectorError, type WalletDescriptor, type WalletRegistry } from "@lunarveil/midnight";
 import { WalletSignatureError } from "@lunarveil/midnight";
 
+import { resetDemoWalletV1, withDemoWalletV1 } from "./demoWallet";
 import { discoverWalletsV1, openWalletSessionV1, shortenIdentityV1 } from "./walletSession";
 
 export interface WalletSessionStateV1 {
@@ -64,11 +65,14 @@ export function WalletPanel({
   networkId,
   registry,
   onSession,
+  demoMode = false,
 }: {
   api: LunarveilApiClientV1 | undefined;
   networkId: string;
   registry?: WalletRegistry | undefined;
   onSession?: (state: WalletSessionStateV1 | undefined) => void;
+  /** Offer the in-browser demo wallet (simulated-chain deployments only). */
+  demoMode?: boolean;
 }) {
   const [wallets, setWallets] = useState<readonly WalletDescriptor[]>([]);
   const [busyWalletId, setBusyWalletId] = useState<string | undefined>(undefined);
@@ -79,10 +83,16 @@ export function WalletPanel({
   // late result is ignored rather than opening a session behind the user's back.
   const attempt = useRef(0);
 
+  // Resolved on every use: an extension can inject itself after first render.
+  const currentRegistry = useCallback((): WalletRegistry | undefined => {
+    const injected = registry ?? (globalThis as { midnight?: WalletRegistry }).midnight;
+    return demoMode ? withDemoWalletV1(injected) : injected;
+  }, [registry, demoMode]);
+  const [demoResets, setDemoResets] = useState(0);
+
   const discover = useCallback(() => {
-    const current = registry ?? (globalThis as { midnight?: WalletRegistry }).midnight;
-    setWallets(discoverWalletsV1(current));
-  }, [registry]);
+    setWallets(discoverWalletsV1(currentRegistry()));
+  }, [currentRegistry]);
 
   useEffect(() => {
     discover();
@@ -105,7 +115,7 @@ export function WalletPanel({
   }, [busyWalletId]);
 
   const connect = useCallback(async (walletId: string) => {
-    const resolvedRegistry = registry ?? (globalThis as { midnight?: WalletRegistry }).midnight;
+    const resolvedRegistry = currentRegistry();
     if (api === undefined || resolvedRegistry === undefined) {
       setFailure("WALLET_UNAVAILABLE");
       return;
@@ -139,7 +149,7 @@ export function WalletPanel({
       clearTimeout(timer);
       if (current === attempt.current) setBusyWalletId(undefined);
     }
-  }, [api, networkId, onSession, registry]);
+  }, [api, currentRegistry, networkId, onSession]);
 
   const cancel = useCallback(() => {
     attempt.current += 1;
@@ -220,6 +230,21 @@ export function WalletPanel({
           {failure === "WALLET_REJECTED" && <span> The request was declined in Lace. Click the wallet again to retry.</span>}
           {failure === "WALLET_DISCONNECTED" && <span> Lace lost the connection. Unlock Lace, check it is on {networkId}, and click the wallet again.</span>}
           {failure === "WALLET_APPROVAL_TIMEOUT" && <span> Lace did not answer in time. Open Lace from the browser toolbar, unlock it, then click the wallet again.</span>}
+        </p>
+      )}
+
+      {demoMode && state === undefined && (
+        <p className="wallet-demo-note">
+          No wallet extension needed: the <strong>demo wallet</strong> signs with a real
+          Midnight ledger key kept in this browser. It holds no assets.{" "}
+          <button
+            className="workspace-refresh"
+            type="button"
+            onClick={() => { resetDemoWalletV1(); setDemoResets(count => count + 1); }}
+          >
+            New demo trader
+          </button>
+          {demoResets > 0 && <span className="wallet-demo-reset"> A fresh identity will be used on the next connection.</span>}
         </p>
       )}
 

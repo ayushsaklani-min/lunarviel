@@ -450,3 +450,58 @@ describe('buildLunarveilApi', () => {
     }
   });
 });
+
+describe('public epoch results', () => {
+  const noOrders = { async submit() { throw new Error('unused'); } };
+  const finalized = {
+    epochId: 'epoch-6', sequence: '6', state: 'FINALIZED' as const, closedAtMs: nowMs.toString(),
+    orderCount: 3, matchedOrderCount: 2, clearingPriceTicks: '100', totalVolumeLots: '6',
+    rejectedSolutionCount: 1, proofReference: 'simulated:ab', settlementReference: 'simulated:cd', simulated: true,
+  };
+
+  it('is not routed when no results source is configured', async () => {
+    const app = buildLunarveilApi(baseDependencies(noOrders));
+    try {
+      expect((await app.inject({ method: 'GET', url: '/v1/markets/market-1/results' })).statusCode).toBe(404);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('returns only the declared public aggregates', async () => {
+    const requested: [string, number][] = [];
+    const app = buildLunarveilApi({
+      ...baseDependencies(noOrders),
+      epochResults: {
+        async recentResults(marketId: string, limit: number) {
+          requested.push([marketId, limit]);
+          // A field a future repository might add must not leak through.
+          return [{ ...finalized, traderTagHash: 'aa'.repeat(32) } as typeof finalized];
+        },
+      },
+    });
+    try {
+      const response = await app.inject({ method: 'GET', url: '/v1/markets/market-1/results?limit=5' });
+      expect(response.statusCode).toBe(200);
+      expect(response.json()).toEqual({ results: [finalized] });
+      expect(requested).toEqual([['market-1', 5]]);
+    } finally {
+      await app.close();
+    }
+  });
+
+  it('rejects an out-of-range limit and hides repository failures', async () => {
+    const app = buildLunarveilApi({
+      ...baseDependencies(noOrders),
+      epochResults: { async recentResults() { throw new Error('connection string postgres://secret'); } },
+    });
+    try {
+      expect((await app.inject({ method: 'GET', url: '/v1/markets/market-1/results?limit=500' })).statusCode).toBe(400);
+      const failed = await app.inject({ method: 'GET', url: '/v1/markets/market-1/results' });
+      expect(failed.statusCode).toBe(503);
+      expect(failed.body).not.toContain('secret');
+    } finally {
+      await app.close();
+    }
+  });
+});

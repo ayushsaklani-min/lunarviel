@@ -12,3 +12,4 @@ export * from './marketContractRegistry.js';
 export * from './traderOrderHistoryRepository.js';
 export * from './epochLifecycleRepository.js';
 export * from './simulatedChainRepository.js';
+export * from './publicEpochResultsRepository.js';

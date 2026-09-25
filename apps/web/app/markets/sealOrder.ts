@@ -8,7 +8,7 @@ import {
 } from "@lunarveil/crypto";
 
 import type { OrderDraftV1 } from "./orderDraft";
-import { ownerSecretForCancellationV1, retainOwnerSecretV1 } from "./ownerSecretVault";
+import { ownerSecretForCancellationV1, retainOwnerOrderSummaryV1, retainOwnerSecretV1 } from "./ownerSecretVault";
 
 /**
  * Commitment and envelope sealing.
@@ -133,6 +133,14 @@ export async function buildSealedOrderV1(input: {
     });
     await retainOwnerSecretV1(commitment, ownerSecret);
     retainedOwnerSecret = true;
+    // Best effort: only this browser's own history view uses it.
+    try {
+      await retainOwnerOrderSummaryV1(commitment, {
+        side: order.side,
+        quantityLots: order.quantityLots.toString(),
+        limitPriceTicks: order.limitPriceTicks.toString(),
+      });
+    } catch { /* The order is still valid without a local summary. */ }
     return { envelope: envelope as unknown as OrderEnvelopeWireV1, commitment };
   } finally {
     plaintext.fill(0);

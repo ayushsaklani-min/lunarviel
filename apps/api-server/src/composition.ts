@@ -20,6 +20,7 @@ import {
 import {
   PostgresOrderEnvelopeRepository,
   PostgresTraderOrderHistoryRepositoryV1,
+  PostgresPublicEpochResultsRepositoryV1,
   PostgresPublicMarketCatalogRepository,
   PostgresRateLimitWindowRepository,
   nodePostgresSerializablePool,
@@ -218,6 +219,7 @@ export async function composeLunarveilApiV1(input: {
         ),
       }),
       markets: new PostgresPublicMarketCatalogRepository(serializable),
+      epochResults: new PostgresPublicEpochResultsRepositoryV1(serializable),
       systemStatus: { read: () => probeStatus(pool, () => matcherKeyUsable(matcherKeys, nowMs()), runtimeDependencyProbes) },
       rateLimiter: new PostgresRateLimitWindowRepository(serializable, RATE_LIMIT_PER_MINUTE),
       logger,

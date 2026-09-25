@@ -4,9 +4,13 @@ import { useCallback, useEffect, useState } from "react";
 
 import {
   isLunarveilApiError,
+  type EpochResultV1,
   type LunarveilApiClientV1,
   type TraderOrderV1,
 } from "@lunarveil/api-client";
+
+import { formatAtomicV1 } from "./marketFormat";
+import { ownerOrderSummaryV1, type OwnerOrderSummaryV1 } from "./ownerSecretVault";
 
 import {
   ORDER_LIFECYCLE_PATH_V1,
@@ -35,21 +39,23 @@ function failureCode(error: unknown): string {
 /**
  * The trader's own order lifecycle.
  *
- * Everything shown is workflow metadata the server already knows: state,
- * timestamps, the public commitment and, once admitted, the chain
- * transaction. No order contents are fetched, because none are available —
- * they exist only inside the ciphertext.
+ * State, timestamps, the public commitment and, once admitted, the chain
+ * transaction come from the server. Side, size and limit come only from this
+ * browser's encrypted vault — the server does not have them in plaintext —
+ * so they appear only for orders placed from this browser.
  *
- * The panel refreshes when the session changes or on request. It does not
- * poll: an order cannot currently advance past `PENDING_CHAIN`, so a ticking
- * request would imply progress that cannot happen.
+ * While any order can still advance, the list refreshes quietly every few
+ * seconds; once every order has reached an end, it stops.
  */
+const POLL_MS = 4_000;
+
 export function OrderHistory({
   api,
   session,
   reloadToken,
   networkId,
   contractAddress,
+  results,
 }: {
   api: LunarveilApiClientV1 | undefined;
   session: { readonly token: string } | undefined;
@@ -57,17 +63,20 @@ export function OrderHistory({
   networkId?: string;
   /** Public market contract address, for explorer links. */
   contractAddress?: string;
+  /** Public batch outcomes by epoch id, to show the clearing price next to a fill. */
+  results?: ReadonlyMap<string, EpochResultV1>;
 }) {
   const [state, setState] = useState<LoadState>({ phase: "loading" });
+  const [summaries, setSummaries] = useState<ReadonlyMap<string, OwnerOrderSummaryV1>>(new Map());
 
-  const load = useCallback(() => {
+  const load = useCallback((quiet = false) => {
     if (api === undefined || session === undefined) return () => undefined;
     const controller = new AbortController();
-    setState({ phase: "loading" });
+    if (!quiet) setState({ phase: "loading" });
     void api.listMyOrders({ bearerToken: session.token }, { signal: controller.signal })
       .then(orders => { setState({ phase: "ready", orders }); })
       .catch((error: unknown) => {
-        if (controller.signal.aborted) return;
+        if (controller.signal.aborted || quiet) return;
         setState({ phase: "failed", code: failureCode(error) });
       });
     return () => { controller.abort(); };
@@ -75,20 +84,26 @@ export function OrderHistory({
 
   useEffect(() => load(), [load, reloadToken]);
 
-  // While an order waits for the admission worker, refresh quietly so its
-  // finalized transaction appears without a manual reload.
-  const awaitingAdmission = state.phase === "ready" && state.orders.some(order =>
-    order.state === "PENDING_CHAIN" && order.admissionSubmittedTxId === undefined);
+  const orders = state.phase === "ready" ? state.orders : undefined;
+  const advancing = orders?.some(order => !isTerminalOrderStateV1(order.state)) ?? false;
+
   useEffect(() => {
-    if (!awaitingAdmission || api === undefined || session === undefined) return;
-    const controller = new AbortController();
-    const timer = setInterval(() => {
-      void api.listMyOrders({ bearerToken: session.token }, { signal: controller.signal })
-        .then(orders => { setState({ phase: "ready", orders }); })
-        .catch(() => { /* keep the last good list; the next tick retries */ });
-    }, 15_000);
-    return () => { clearInterval(timer); controller.abort(); };
-  }, [api, awaitingAdmission, session]);
+    if (!advancing) return;
+    let cancel: () => void = () => undefined;
+    const timer = setInterval(() => { cancel(); cancel = load(true); }, POLL_MS);
+    return () => { clearInterval(timer); cancel(); };
+  }, [advancing, load]);
+
+  useEffect(() => {
+    if (orders === undefined) return;
+    let active = true;
+    void Promise.all(orders.map(async order => [order.commitment, await ownerOrderSummaryV1(order.commitment).catch(() => undefined)] as const))
+      .then(entries => {
+        if (!active) return;
+        setSummaries(new Map(entries.filter((entry): entry is readonly [string, OwnerOrderSummaryV1] => entry[1] !== undefined)));
+      });
+    return () => { active = false; };
+  }, [orders]);
 
   if (session === undefined) {
     return (
@@ -105,6 +120,7 @@ export function OrderHistory({
     <section className="workspace-panel" aria-labelledby="history-title">
       <header className="history-header">
         <h2 id="history-title">Your orders</h2>
+        {advancing && <span className="history-live-badge" role="status">Live</span>}
         <button className="workspace-refresh" type="button" onClick={() => load()}>Refresh</button>
       </header>
 
@@ -138,6 +154,8 @@ export function OrderHistory({
                       <span className="history-state">{orderStateLabelV1(order.state)}</span>
                       <span className="history-time">{formatTimestampV1(order.createdAtMs)}</span>
                     </div>
+
+                    <OrderOutcome order={order} summary={summaries.get(order.commitment)} result={results?.get(order.epochId)} />
 
                     <LifecycleTrack state={order.state} />
 
@@ -195,9 +213,9 @@ export function OrderHistory({
       )}
 
       <p className="wallet-note">
-        Side, price and quantity are not shown because they are not available here —
-        they exist only inside the ciphertext the matcher decrypts. What you see is
-        the workflow record.
+        The server holds side, price and quantity only inside the ciphertext the
+        matcher decrypts. The order details shown above come from this browser&apos;s
+        encrypted vault, and only for orders placed here.
       </p>
     </section>
   );
@@ -225,5 +243,38 @@ function LifecycleTrack({ state }: { state: TraderOrderV1["state"] }) {
       ))}
       {isTerminalOrderStateV1(state) && <li className="history-step history-step-final"><span>Complete</span></li>}
     </ol>
+  );
+}
+
+/** "Buy 10 @ 101 → filled at 100". Only the owner's own browser can say the first half. */
+function OrderOutcome({
+  order,
+  summary,
+  result,
+}: {
+  order: TraderOrderV1;
+  summary: OwnerOrderSummaryV1 | undefined;
+  result: EpochResultV1 | undefined;
+}) {
+  if (summary === undefined && result === undefined) return null;
+  const traded = order.state === "FILLED" || order.state === "PARTIALLY_FILLED";
+  return (
+    <p className="history-outcome">
+      {summary !== undefined && (
+        <span className={`history-side history-side-${summary.side.toLowerCase()}`}>
+          {summary.side === "BUY" ? "Buy" : "Sell"} {formatAtomicV1(summary.quantityLots)} @ {formatAtomicV1(summary.limitPriceTicks)}
+        </span>
+      )}
+      {traded && result?.clearingPriceTicks !== undefined && (
+        <span className="history-clearing">
+          {order.state === "FILLED" ? "filled" : "partially filled"} at clearing price {formatAtomicV1(result.clearingPriceTicks)}
+        </span>
+      )}
+      {order.state === "EXPIRED" && result !== undefined && (
+        <span className="history-clearing">
+          {result.clearingPriceTicks === undefined ? "no trade this batch" : `not reached — batch cleared at ${formatAtomicV1(result.clearingPriceTicks)}`}
+        </span>
+      )}
+    </p>
   );
 }

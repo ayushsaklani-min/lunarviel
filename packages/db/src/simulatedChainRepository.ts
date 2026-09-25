@@ -76,6 +76,15 @@ const ADMIT = `
   WHERE "id" = $1 AND "state" = 'PENDING_CHAIN'
 `;
 
+/**
+ * Keeps the public admitted count current while the epoch is open. The
+ * close pass recounts it from ACCEPTED rows, so this is display only.
+ */
+const COUNT_ADMISSION = `
+  UPDATE "Epoch" SET "orderCount" = $2, "updatedAt" = CURRENT_TIMESTAMP
+  WHERE "id" = $1 AND "state" = 'OPEN'
+`;
+
 const REJECT = `
   UPDATE "OrderEnvelope" SET "state" = 'REJECTED', "updatedAt" = CURRENT_TIMESTAMP
   WHERE "id" = $1 AND "state" = 'PENDING_CHAIN'
@@ -305,6 +314,7 @@ export class PostgresSimulatedChainRepositoryV1 {
       if (leafIndex >= BigInt(epoch.maxOrdersPerEpoch)) return { outcome: 'EPOCH_FULL' };
       const txId = `${SIMULATED_CHAIN_PREFIX}${sha256Hex('lunarveil:simulated-admission:v1', candidate.epochId, candidate.commitment)}`;
       await client.query(ADMIT, [candidate.orderId, leafIndex.toString(), txId]);
+      await client.query(COUNT_ADMISSION, [candidate.epochId, Number(leafIndex) + 1]);
       return { outcome: 'ADMITTED', leafIndex, txId };
     });
   }

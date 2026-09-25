@@ -56,6 +56,31 @@ export interface EpochV1 {
   readonly configHash: string;
 }
 
+/**
+ * The public outcome of one finished batch auction: batch-level aggregates
+ * only. No order side, price, quantity or trader identifier.
+ */
+export interface EpochResultV1 {
+  readonly epochId: string;
+  /** Canonical decimal string. */
+  readonly sequence: string;
+  readonly state: 'FINALIZED' | 'INVALIDATED';
+  /** Canonical decimal milliseconds. */
+  readonly closedAtMs: string;
+  readonly orderCount: number;
+  readonly matchedOrderCount: number;
+  /** Absent when nothing traded. Canonical decimal ticks. */
+  readonly clearingPriceTicks?: string;
+  /** Canonical decimal lots. */
+  readonly totalVolumeLots: string;
+  /** Forged solutions the verifier refused for this epoch. */
+  readonly rejectedSolutionCount: number;
+  readonly proofReference?: string;
+  readonly settlementReference?: string;
+  /** True when proof and settlement came from the development-only simulated chain. */
+  readonly simulated: boolean;
+}
+
 export type DependencyStateV1 = 'READY' | 'DEGRADED' | 'UNAVAILABLE' | 'PAUSED';
 
 export const DEPENDENCY_STATES_V1: readonly DependencyStateV1[] = [

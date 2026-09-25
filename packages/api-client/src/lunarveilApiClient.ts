@@ -5,6 +5,7 @@ import {
   EPOCH_STATES_V1,
   MARKET_STATUSES_V1,
   type DependencyComponentV1,
+  type EpochResultV1,
   type EpochV1,
   ORDER_SUBMISSION_STATES_V1,
   TRADER_ORDER_STATES_V1,
@@ -100,6 +101,26 @@ function parseEpoch(value: unknown): EpochV1 {
     scheduledCloseAtMs: requireDecimal(raw.scheduledCloseAtMs),
     ruleVersion: requireString(raw.ruleVersion, 64),
     configHash: requireString(raw.configHash, 256),
+  };
+}
+
+function parseEpochResult(value: unknown): EpochResultV1 {
+  const raw = asRecord(value);
+  const state = requireMember(raw.state, ['FINALIZED', 'INVALIDATED'] as const);
+  if (typeof raw.simulated !== 'boolean') throw new LunarveilApiError('MALFORMED_RESPONSE');
+  return {
+    epochId: requireString(raw.epochId, 128),
+    sequence: requireDecimal(raw.sequence),
+    state,
+    closedAtMs: requireDecimal(raw.closedAtMs),
+    orderCount: requireCount(raw.orderCount, 0),
+    matchedOrderCount: requireCount(raw.matchedOrderCount, 0),
+    ...(raw.clearingPriceTicks === undefined ? {} : { clearingPriceTicks: requireDecimal(raw.clearingPriceTicks) }),
+    totalVolumeLots: requireDecimal(raw.totalVolumeLots),
+    rejectedSolutionCount: requireCount(raw.rejectedSolutionCount, 0),
+    ...(raw.proofReference === undefined ? {} : { proofReference: requireString(raw.proofReference, 256) }),
+    ...(raw.settlementReference === undefined ? {} : { settlementReference: requireString(raw.settlementReference, 256) }),
+    simulated: raw.simulated,
   };
 }
 
@@ -259,6 +280,24 @@ export class LunarveilApiClientV1 {
       throw new LunarveilApiError('INVALID_ARGUMENT');
     }
     return parseEpoch(await this.getJson(`/v1/markets/${encodeURIComponent(marketId)}/epoch`, init));
+  }
+
+  /** Recent finished epochs of one market, newest first. Public aggregates only. */
+  async listEpochResults(
+    marketId: string,
+    input: { readonly limit?: number } = {},
+    init: { readonly signal?: AbortSignal } = {},
+  ): Promise<readonly EpochResultV1[]> {
+    if (typeof marketId !== 'string' || !MARKET_ID_PATTERN.test(marketId)) {
+      throw new LunarveilApiError('INVALID_ARGUMENT');
+    }
+    if (input.limit !== undefined && (!Number.isSafeInteger(input.limit) || input.limit < 1 || input.limit > 50)) {
+      throw new LunarveilApiError('INVALID_ARGUMENT');
+    }
+    const query = input.limit === undefined ? '' : `?limit=${input.limit}`;
+    const body = asRecord(await this.getJson(`/v1/markets/${encodeURIComponent(marketId)}/results${query}`, init));
+    if (!Array.isArray(body.results)) throw new LunarveilApiError('MALFORMED_RESPONSE');
+    return body.results.map(parseEpochResult);
   }
 
   async getSystemStatus(init: { readonly signal?: AbortSignal } = {}): Promise<SystemStatusV1> {

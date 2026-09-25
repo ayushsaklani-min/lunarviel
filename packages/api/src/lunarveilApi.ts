@@ -32,6 +32,13 @@ export interface LunarveilApiDependencies {
   readonly systemStatus: SanitizedSystemStatusProvider;
   readonly allocations?: EncryptedAllocationTransportV1;
   /**
+   * Public outcomes of finished epochs: clearing price, volume and counts.
+   * Optional so a deployment without it simply does not expose the route.
+   */
+  readonly epochResults?: {
+    recentResults(marketId: string, limit: number): Promise<readonly PublicEpochResultV1[]>;
+  };
+  /**
    * Issues a trader's pseudonymous tag after authentication. Optional so a
    * deployment whose binding verifier needs no issued tag keeps working; when
    * absent, `/v1/sessions/verify` simply omits the field.
@@ -148,6 +155,22 @@ export interface PublicEpochV1 {
   readonly scheduledCloseAtMs: string;
   readonly ruleVersion: string;
   readonly configHash: string;
+}
+
+/** Batch-level public aggregates only; see `PostgresPublicEpochResultsRepositoryV1`. */
+export interface PublicEpochResultV1 {
+  readonly epochId: string;
+  readonly sequence: string;
+  readonly state: 'FINALIZED' | 'INVALIDATED';
+  readonly closedAtMs: string;
+  readonly orderCount: number;
+  readonly matchedOrderCount: number;
+  readonly clearingPriceTicks?: string;
+  readonly totalVolumeLots: string;
+  readonly rejectedSolutionCount: number;
+  readonly proofReference?: string;
+  readonly settlementReference?: string;
+  readonly simulated: boolean;
 }
 
 export interface PublicMarketCatalog {
@@ -401,6 +424,39 @@ export function buildLunarveilApi(
       return marketError(error);
     }
   });
+
+  if (dependencies.epochResults !== undefined) {
+    const epochResults = dependencies.epochResults;
+    app.get<{ Params: { marketId: string }; Querystring: { limit?: number } }>('/v1/markets/:marketId/results', {
+      schema: {
+        params: { type: 'object', additionalProperties: false, required: ['marketId'], properties: { marketId: { type: 'string', minLength: 1, maxLength: 128 } } },
+        querystring: { type: 'object', additionalProperties: false, properties: { limit: { type: 'integer', minimum: 1, maximum: 50 } } },
+      },
+    }, async (request) => {
+      try {
+        const results = await epochResults.recentResults(request.params.marketId, request.query.limit ?? 10);
+        // Rebuilt field by field: only the declared public aggregates leave.
+        return {
+          results: results.map(result => ({
+            epochId: result.epochId,
+            sequence: result.sequence,
+            state: result.state,
+            closedAtMs: result.closedAtMs,
+            orderCount: result.orderCount,
+            matchedOrderCount: result.matchedOrderCount,
+            ...(result.clearingPriceTicks === undefined ? {} : { clearingPriceTicks: result.clearingPriceTicks }),
+            totalVolumeLots: result.totalVolumeLots,
+            rejectedSolutionCount: result.rejectedSolutionCount,
+            ...(result.proofReference === undefined ? {} : { proofReference: result.proofReference }),
+            ...(result.settlementReference === undefined ? {} : { settlementReference: result.settlementReference }),
+            simulated: result.simulated,
+          })),
+        };
+      } catch (error) {
+        return marketError(error);
+      }
+    });
+  }
 
   if (dependencies.allocations !== undefined) {
     app.get<{ Params: AllocationParams }>('/v1/epochs/:epochId/allocation', {

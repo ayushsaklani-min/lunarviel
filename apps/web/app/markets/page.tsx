@@ -1,6 +1,6 @@
 import type { Metadata } from "next";
 
-import { resolveApiBaseUrlV1, resolveMarketContractAddressV1, resolveWalletNetworkV1 } from "../lib/apiConfig";
+import { resolveApiBaseUrlV1, resolveDemoModeV1, resolveMarketContractAddressV1, resolveWalletNetworkV1 } from "../lib/apiConfig";
 import { MarketsWorkspace } from "./markets-workspace";
 
 export const metadata: Metadata = {
@@ -23,6 +23,7 @@ export default function MarketsPage() {
     <MarketsWorkspace
       apiBaseUrl={resolveApiBaseUrlV1(process.env)}
       networkId={networkId}
+      demoMode={resolveDemoModeV1(process.env)}
       {...(contractAddress === undefined ? {} : { contractAddress })}
     />
   );
