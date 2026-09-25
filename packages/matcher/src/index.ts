@@ -13,3 +13,4 @@ export * from './m3AdmissionPreflight.js';
 export * from './sessionChallenge.js';
 export * from './sharedDevelopmentMatcherKey.js';
 export * from './traderOrderHistory.js';
+export * from './simulatedChain.js';

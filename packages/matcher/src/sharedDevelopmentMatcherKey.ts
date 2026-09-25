@@ -8,6 +8,12 @@ import type { MatcherEncryptionPublicKeyV1 } from '@lunarveil/crypto';
  * headers, followed by the 32 key bytes.
  */
 const X25519_PKCS8_PREFIX = Buffer.from('302e020100300506032b656e04220420', 'hex');
+/**
+ * The key id every development process uses with the shared seed. The API
+ * publishes it and envelopes record it; the matcher must resolve the same id.
+ */
+export const SHARED_DEVELOPMENT_MATCHER_KEY_ID = 'matcher-shared-dev';
+
 const SEED_PATTERN = /^(?:[0-9a-fA-F]{2}){32}$/u;
 const KEY_ID_PATTERN = /^[A-Za-z0-9][A-Za-z0-9._:-]{0,127}$/u;
 

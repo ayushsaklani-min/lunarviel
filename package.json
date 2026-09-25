@@ -12,6 +12,7 @@
   ],
   "scripts": {
     "test": "npm run test --workspaces --if-present",
+    "test:integration": "bash scripts/test-postgres.sh",
     "typecheck": "npm run typecheck --workspaces --if-present",
     "lint": "npm run lint --workspaces --if-present",
     "midnight:compile": "npm --prefix spikes/midnight-smoke run compile",

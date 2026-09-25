@@ -3,10 +3,19 @@ import { Pool } from 'pg';
 import { createRedactedLoggerV1, jsonLineSinkV1 } from '@lunarveil/api';
 import {
   PostgresAdvisoryLockV1,
+  PostgresClosedEpochBatchRepositoryV1,
   PostgresEpochLifecycleRepositoryV1,
+  PostgresOrderEnvelopeRepository,
+  PostgresSimulatedChainRepositoryV1,
   nodePostgresSerializablePool,
 } from '@lunarveil/db';
-import { EpochCloseServiceV1, type EpochClosePassResultV1 } from '@lunarveil/matcher';
+import {
+  EpochCloseServiceV1,
+  M3AdmissionPreflightV1,
+  SimulatedChainServiceV1,
+  type EpochClosePassResultV1,
+  type MatcherKeyResolverV1,
+} from '@lunarveil/matcher';
 
 import type { MatcherWorkerConfigV1 } from './config.js';
 
@@ -33,7 +42,12 @@ export function composeMatcherWorkerV1(input: {
   readonly nowMs?: () => bigint;
   readonly logLine?: (line: string) => void;
   readonly poolMax?: number;
+  /** Required exactly when `config.simulatedChain` is set. */
+  readonly simulatedChainKeys?: MatcherKeyResolverV1;
 }): ComposedMatcherWorkerV1 {
+  if ((input.config.simulatedChain === undefined) !== (input.simulatedChainKeys === undefined)) {
+    throw new Error('SIMULATED_CHAIN_KEYS_MISMATCH');
+  }
   const poolMax = input.poolMax ?? 4;
   // The advisory lock holds one client for the whole enclosed pass, which
   // itself needs at least one more to do any work.
@@ -53,10 +67,35 @@ export function composeMatcherWorkerV1(input: {
   );
   const lock = new PostgresAdvisoryLockV1(serializable, LOCK_NAME);
 
+  // Development-only: plays the chain's part so the lifecycle completes.
+  const simulator = input.config.simulatedChain === undefined ? undefined : new SimulatedChainServiceV1({
+    store: new PostgresSimulatedChainRepositoryV1(serializable),
+    batches: new PostgresClosedEpochBatchRepositoryV1(serializable),
+    preflight: new M3AdmissionPreflightV1(new PostgresOrderEnvelopeRepository(serializable), input.simulatedChainKeys!, nowMs),
+    keys: input.simulatedChainKeys!,
+    nowMs,
+    maliciousMatcher: input.config.simulatedChain.maliciousMatcher,
+    batchSize: input.config.batchSize,
+    onEvent: event => logger.log({
+      level: event.event === 'simulated.malicious_solution_rejected' || event.event === 'simulated.epoch_invalidated' ? 'warn' : 'info',
+      event: event.event,
+    }),
+  });
+
   return {
     async runPass(): Promise<EpochClosePassResultV1> {
       try {
-        const outcome = await lock.runExclusively(async () => service.runOnce());
+        const outcome = await lock.runExclusively(async () => {
+          const closed = await service.runOnce();
+          if (simulator !== undefined) {
+            try {
+              await simulator.runOnce();
+            } catch {
+              logger.log({ level: 'error', event: 'simulated.pass_failed', code: 'SIMULATED_PASS_FAILED' });
+            }
+          }
+          return closed;
+        });
         if (!outcome.ran) {
           logger.log({ level: 'info', event: 'epoch.pass_skipped', code: 'LOCK_HELD' });
           return EMPTY;

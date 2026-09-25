@@ -13,6 +13,7 @@ import {
 import {
   AuthenticatedOrderSubmissionServiceV1,
   SharedDevelopmentMatcherKeyStoreV1,
+  SHARED_DEVELOPMENT_MATCHER_KEY_ID,
   TraderOrderHistoryServiceV1,
   InMemorySessionChallengeService,
 } from '@lunarveil/matcher';
@@ -46,7 +47,7 @@ import { createRuntimeDependencyProbesV1, type RuntimeDependencyProbesV1 } from 
  */
 export type ComposedMatcherKeyStoreV1 = DevelopmentMatcherKeyStoreV1 | SharedDevelopmentMatcherKeyStoreV1;
 
-const MATCHER_KEY_ID = 'matcher-shared-dev';
+const MATCHER_KEY_ID = SHARED_DEVELOPMENT_MATCHER_KEY_ID;
 const MATCHER_KEY_LIFETIME_MS = 86_400_000n;
 
 export interface ComposedLunarveilApiV1 {

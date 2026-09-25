@@ -1,3 +1,5 @@
+import { SHARED_DEVELOPMENT_MATCHER_KEY_ID, SharedDevelopmentMatcherKeyStoreV1, type MatcherKeyResolverV1 } from '@lunarveil/matcher';
+
 import { parseMatcherWorkerConfigV1 } from './config.js';
 import { composeMatcherWorkerV1 } from './composition.js';
 
@@ -8,7 +10,27 @@ async function main(): Promise<void> {
     throw new Error('LUNARVEIL_DATABASE_URL is required');
   }
 
-  const worker = composeMatcherWorkerV1({ config, databaseUrl });
+  let simulatedChainKeys: MatcherKeyResolverV1 | undefined;
+  if (config.simulatedChain !== undefined) {
+    // Same seed and key id as the API server, so envelopes it sealed decrypt here.
+    const nowMs = BigInt(Date.now());
+    const store = await SharedDevelopmentMatcherKeyStoreV1.create({
+      environment: process.env.LUNARVEIL_ENV ?? '',
+      seedHex: config.simulatedChain.matcherKeySeedHex,
+      keyId: SHARED_DEVELOPMENT_MATCHER_KEY_ID,
+      activeFromMs: 0n,
+      expiresAtMs: nowMs + 365n * 86_400_000n,
+    });
+    simulatedChainKeys = {
+      resolveExistingEnvelopeKey: async keyId => ({
+        ...store.activePublicKey(BigInt(Date.now())),
+        privateKey: await store.resolvePrivateKey({ keyId, privateKeyRef: store.privateKeyRef }),
+      }),
+    };
+    process.stdout.write(`${JSON.stringify({ event: 'matcher.simulated_chain_enabled', maliciousMatcher: config.simulatedChain.maliciousMatcher })}\n`);
+  }
+
+  const worker = composeMatcherWorkerV1({ config, databaseUrl, ...(simulatedChainKeys === undefined ? {} : { simulatedChainKeys }) });
 
   let stopping = false;
   const stop = async (): Promise<void> => { stopping = true; await worker.close(); };

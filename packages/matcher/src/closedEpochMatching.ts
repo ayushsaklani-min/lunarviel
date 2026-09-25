@@ -9,7 +9,7 @@ import {
   type OrderEnvelopeV1,
   type OrderIntentV1,
 } from '@lunarveil/crypto';
-import { clearBatch, type BatchSolutionV1, type MatchingOrderV1 } from '@lunarveil/matching-core';
+import { clearBatch, type BatchInputV1, type BatchSolutionV1, type MatchingOrderV1 } from '@lunarveil/matching-core';
 
 const HEX_32 = /^[0-9a-f]{64}$/u;
 const DECIMAL = /^(0|[1-9][0-9]*)$/u;
@@ -67,6 +67,8 @@ export interface M3AdmissionEnvelopeValidationV1 {
 export interface PreparedClosedEpochBatchV1 {
   readonly solution: BatchSolutionV1;
   readonly openings: readonly PreparedOrderOpeningV1[];
+  /** The exact deterministic matching input, for independent re-verification. Same sensitivity as `openings`. */
+  readonly input: BatchInputV1;
 }
 
 export interface PreparedOrderOpeningV1 {
@@ -328,7 +330,7 @@ export async function prepareClosedEpochBatchV1(
       openings.push({ orderId: row.orderId, leafIndex: row.leafIndex, order: opening.order, blinding: opening.blinding, traderTagHash: row.envelope.traderTagHash });
     }
     try {
-      const solution = clearBatch({
+      const input: BatchInputV1 = {
         version: 1,
         marketId: context.marketId,
         epochId: context.epochId,
@@ -341,8 +343,9 @@ export async function prepareClosedEpochBatchV1(
           referencePriceHash: context.referencePriceHash!,
         }),
         ...(context.maxPriceCollarBps === undefined ? {} : { maxPriceCollarBps: context.maxPriceCollarBps }),
-      });
-      return { solution, openings };
+      };
+      const solution = clearBatch(input);
+      return { solution, openings, input };
     } catch {
       throw new ClosedEpochMatchingError('MATCHING_REJECTED');
     }
